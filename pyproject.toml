@@ -1,0 +1,67 @@
+[build-system]
+requires = ["hatchling>=1.31.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pyts"
+version = "0.1.0"
+description = "Python Trace Setup utility complementing pyOCD for CMSIS Debug integration"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [
+  { name = "Jonatan Antoni" },
+]
+keywords = ["cmsis", "debug", "elf", "symbols", "yaml", "pyocd", "trace"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Software Development :: Embedded Systems",
+  "Topic :: Software Development :: Debuggers",
+]
+dependencies = [
+  "PyYAML>=6.0.3",
+  "pyelftools>=0.33",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=9.1.1",
+]
+typecheck = [
+  "mypy>=2.2.0",
+  "pyright>=1.1.411",
+  "pytest>=9.1.1",
+  "types-PyYAML>=6.0.12.20260518",
+]
+lint = [
+  "mypy>=2.2.0",
+  "pyright>=1.1.411",
+  "pytest>=9.1.1",
+  "types-PyYAML>=6.0.12.20260518",
+]
+
+[project.scripts]
+pyts = "pyts.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/JonatanAntoni/pyTS"
+Issues = "https://github.com/JonatanAntoni/pyTS/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pyts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.mypy]
+files = ["src", "tests"]
+strict = true
+warn_unreachable = true
+pretty = true
+mypy_path = "typings"

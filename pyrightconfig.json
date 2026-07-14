@@ -1,0 +1,12 @@
+{
+  "include": ["src", "tests"],
+  "stubPath": "typings",
+  "venvPath": ".",
+  "venv": ".venv",
+  "typeCheckingMode": "strict",
+  "reportUnknownArgumentType": "error",
+  "reportUnknownMemberType": "error",
+  "reportUnknownParameterType": "error",
+  "reportUnknownVariableType": "error",
+  "reportUnknownLambdaType": "error"
+}
