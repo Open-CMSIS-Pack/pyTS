@@ -105,11 +105,19 @@ def symbol_files(
                 path=path,
                 aliases=file_aliases(file_name, resolved_path),
                 project=output_project(file_name, output, projects),
+                pname=output_pname(output),
             )
         )
     if not results:
         raise ValueError("cbuild-run.output must list at least one ELF file")
     return results
+
+
+def output_pname(output: YamlMapping) -> str | None:
+    """Return the processor name assigned to a build output, if present."""
+
+    pname = output.get("pname")
+    return pname.strip() if isinstance(pname, str) and pname.strip() else None
 
 
 def project_aliases_from_index(root: Path) -> dict[str, str]:

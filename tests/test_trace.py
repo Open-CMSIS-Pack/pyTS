@@ -389,6 +389,115 @@ def test_setup_trace_enriches_spec_location_entries(
     ]
 
 
+def test_setup_trace_limits_elf_lookup_to_setup_processor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ctrace = {
+        "ctrace": {
+            "setup": [
+                {
+                    "pname": "CM7",
+                    "data": [
+                        {"location": "App|shared"},
+                        {"symbol": "legacy_shared"},
+                    ],
+                },
+                {
+                    "pname": "CM4",
+                    "data": [
+                        {"location": "App|shared"},
+                        {"symbol": "legacy_shared"},
+                        {"location": "App|cm7_only"},
+                    ],
+                },
+            ]
+        }
+    }
+    outputs = [
+        {
+            "file": "App/cm7.axf",
+            "type": "elf",
+            "project": "App",
+            "pname": "CM7",
+        },
+        {
+            "file": "App/cm4.axf",
+            "type": "elf",
+            "project": "App",
+            "pname": "CM4",
+        },
+    ]
+    project, cbuild_run, trace_name = _write_trace_project(
+        tmp_path,
+        ctrace=ctrace,
+        outputs=outputs,
+    )
+    calls: list[tuple[str, list[str]]] = []
+
+    def fake_resolve_symbols(
+        path: Path,
+        names: list[str],
+    ) -> list[SymbolInfo]:
+        core = path.stem
+        calls.append((core, list(names)))
+        addresses = {
+            "cm7": {
+                "shared": 0x1000,
+                "legacy_shared": 0x1010,
+                "cm7_only": 0x1020,
+            },
+            "cm4": {
+                "shared": 0x2000,
+                "legacy_shared": 0x2010,
+            },
+        }[core]
+        return [
+            SymbolInfo(
+                name=name,
+                address=addresses[name],
+                size=4,
+                type="object",
+                binding="global",
+                visibility="default",
+                section=".data",
+                table=".symtab",
+            )
+            for name in names
+            if name in addresses
+        ]
+
+    fake_resolver = _patch_trace_resolver(
+        monkeypatch,
+        resolve_symbols=fake_resolve_symbols,
+    )
+
+    result = setup_trace(cbuild_run, allow_missing=True)
+
+    output = read_yaml(project / ".trace" / f"{trace_name}.ctrace-run.yml")
+    cm7_data = output["ctrace"]["setup"][0]["data"]
+    cm4_data = output["ctrace"]["setup"][1]["data"]
+    assert cm7_data[0]["address"] == "0x1000"
+    assert cm7_data[1]["address"] == "0x1010"
+    assert cm4_data[0]["address"] == "0x2000"
+    assert cm4_data[1]["address"] == "0x2010"
+    assert cm4_data[2]["error"] == "symbol not found: cm7_only"
+    assert cm7_data[0]["symbol-file"].endswith("/App/cm7.axf")
+    assert cm4_data[0]["symbol-file"].endswith("/App/cm4.axf")
+    assert result.symbols == [
+        "shared",
+        "legacy_shared",
+        "shared",
+        "legacy_shared",
+    ]
+    assert result.missing == ["App|cm7_only"]
+    assert fake_resolver.opened_paths == [
+        cbuild_run.parent / "App/cm7.axf",
+        cbuild_run.parent / "App/cm4.axf",
+    ]
+    assert ("cm7", ["cm7_only"]) not in calls
+
+
 def test_setup_trace_generates_coresight_register_settings(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2471,7 +2580,7 @@ def test_trace_setup_cli_outputs_json_summary(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    _project, cbuild_run, trace_name = _write_trace_project(tmp_path)
+    _project, cbuild_run, _trace_name = _write_trace_project(tmp_path)
 
     def fake_setup_trace(path: Path, allow_missing: bool = False) -> Any:
         result = setup_trace(path, allow_missing=allow_missing)

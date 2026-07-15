@@ -33,13 +33,17 @@ class SymbolFile:
     path: Path
     aliases: frozenset[str]
     project: str | None
+    pname: str | None = None
 
-    def matches(self, qualifier: str | None) -> bool:
-        """Return whether this file matches a normalized qualifier."""
+    def matches(self, qualifier: str | None, pname: str | None = None) -> bool:
+        """Return whether this file matches qualifier and processor filters."""
 
-        if qualifier is None:
-            return True
-        return self.project == qualifier or qualifier in self.aliases
+        qualifier_matches = (
+            qualifier is None
+            or self.project == qualifier
+            or qualifier in self.aliases
+        )
+        return qualifier_matches and (pname is None or self.pname == pname)
 
 
 @dataclass(frozen=True)
@@ -83,11 +87,20 @@ class SymbolCatalog:
         self._stack.close()
         self._closed = True
 
-    def candidates(self, qualifier: str | None = None) -> list[SymbolFile]:
-        """Return files matching a normalized qualifier in declared order."""
+    def candidates(
+        self,
+        qualifier: str | None = None,
+        *,
+        pname: str | None = None,
+    ) -> list[SymbolFile]:
+        """Return files matching qualifier and processor in declared order."""
 
         self._check_open()
-        return [item for item in self.symbol_files if item.matches(qualifier)]
+        return [
+            item
+            for item in self.symbol_files
+            if item.matches(qualifier, pname)
+        ]
 
     def open(self, symbol_file: SymbolFile) -> OpenSymbolFile:
         """Open one file at most once and return its resolver pair."""
@@ -107,6 +120,8 @@ class SymbolCatalog:
     def resolve_names(
         self,
         names: list[str],
+        *,
+        pname: str | None = None,
     ) -> dict[str, SymbolInfo | MemberInfo]:
         """Resolve each name from the first ELF that provides it."""
 
@@ -114,7 +129,7 @@ class SymbolCatalog:
             return {}
         resolved: dict[str, SymbolInfo | MemberInfo] = {}
         remaining = list(dict.fromkeys(names))
-        for symbol_file in self.candidates():
+        for symbol_file in self.candidates(pname=pname):
             if not remaining:
                 break
             opened = self.open(symbol_file)
@@ -126,6 +141,8 @@ class SymbolCatalog:
     def resolve_members_by_address(
         self,
         members: list[tuple[int, int]],
+        *,
+        pname: str | None = None,
     ) -> tuple[dict[tuple[int, int], MemberInfo], set[tuple[int, int]]]:
         """Resolve unique DWARF members and report ambiguous address pairs."""
 
@@ -134,7 +151,7 @@ class SymbolCatalog:
         resolved: dict[tuple[int, int], MemberInfo] = {}
         ambiguous: set[tuple[int, int]] = set()
         remaining = list(dict.fromkeys(members))
-        for symbol_file in self.candidates():
+        for symbol_file in self.candidates(pname=pname):
             if not remaining:
                 break
             opened = self.open(symbol_file)
@@ -161,6 +178,8 @@ class SymbolCatalog:
     def resolve_addresses(
         self,
         addresses: list[int],
+        *,
+        pname: str | None = None,
     ) -> dict[int, SymbolInfo | MemberInfo]:
         """Resolve exact addresses from the first ELF that provides each one."""
 
@@ -168,7 +187,7 @@ class SymbolCatalog:
             return {}
         resolved: dict[int, SymbolInfo | MemberInfo] = {}
         remaining = list(dict.fromkeys(addresses))
-        for symbol_file in self.candidates():
+        for symbol_file in self.candidates(pname=pname):
             if not remaining:
                 break
             opened = self.open(symbol_file)

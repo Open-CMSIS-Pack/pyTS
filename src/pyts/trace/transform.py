@@ -62,6 +62,41 @@ def has_location(entry: YamlMapping) -> bool:
     return LocationSpec.from_yaml(entry.get("location")) is not None
 
 
+def setup_processor_names(document: YamlMapping) -> dict[int, str]:
+    """Return normalized processor names keyed by trace setup index."""
+
+    root = document.get("ctrace")
+    if not isinstance(root, dict):
+        return {}
+    setups = root.get("setup")
+    if not isinstance(setups, list):
+        return {}
+    result: dict[int, str] = {}
+    for index, setup in enumerate(setups):
+        if not isinstance(setup, dict):
+            continue
+        pname = setup.get("pname")
+        if isinstance(pname, str) and pname.strip():
+            result[index] = pname.strip()
+    return result
+
+
+def enclosing_setup_pname(
+    path: EntryPath,
+    setup_pnames: dict[int, str],
+) -> str | None:
+    """Return the processor selected by the setup containing a path."""
+
+    if (
+        len(path) >= 3
+        and path[0] == "ctrace"
+        and path[1] == "setup"
+        and isinstance(path[2], int)
+    ):
+        return setup_pnames.get(path[2])
+    return None
+
+
 def transform_trace_document(
     source: YamlMapping,
     catalog: SymbolCatalog,
@@ -70,6 +105,12 @@ def transform_trace_document(
 
     document = deepcopy(source)
     refs = list(mapping_refs(document))
+    setup_pnames = setup_processor_names(document)
+    pnames_by_path = {
+        ref.path: pname
+        for ref in refs
+        if (pname := enclosing_setup_pname(ref.path, setup_pnames)) is not None
+    }
     location_refs = [ref for ref in refs if has_location(ref.value)]
     legacy_symbol_refs = [
         ref
@@ -89,68 +130,100 @@ def transform_trace_document(
         and manual_address(ref.value) is not None
     ]
 
-    resolved_locations, location_errors = resolve_locations(catalog, location_refs)
+    resolved_locations, location_errors = resolve_locations(
+        catalog,
+        location_refs,
+        pnames_by_path,
+    )
     enrich_location_refs(location_refs, resolved_locations, location_errors)
-
-    symbol_names = [cast(str, ref.value["symbol"]) for ref in legacy_symbol_refs]
-    address_entries = [ref.value for ref in legacy_address_refs]
-    resolved = catalog.resolve_names(symbol_names)
-    resolved_members, ambiguous_members = catalog.resolve_members_by_address(
-        entry_sized_addresses(address_entries)
-    )
-    resolved_by_address = catalog.resolve_addresses(entry_addresses(address_entries))
-    legacy_missing = missing_symbols(resolved.values(), symbol_names)
-    enrich_legacy_refs(
-        [*legacy_symbol_refs, *legacy_address_refs],
-        resolved,
-        resolved_members,
-        ambiguous_members,
-        resolved_by_address,
-    )
 
     missing_by_path: dict[EntryPath, str] = {
         ref.path: str(ref.value["location"])
         for ref in location_refs
         if ref.path in location_errors
     }
-    unresolved_names = set(legacy_missing)
-    for ref in legacy_symbol_refs:
-        symbol = cast(str, ref.value["symbol"])
-        if symbol not in unresolved_names:
-            continue
-        missing_by_path[ref.path] = symbol
-        if location_refs:
-            error = f"symbol not found: {symbol}"
-            enrich_property(
-                ref.value,
-                f"symbol {symbol!r}",
-                "error",
-                error,
-                ref.value.get("error") == error,
-            )
-
     resolved_names: dict[EntryPath, str] = {
         path: value.symbol for path, value in resolved_locations.items()
     }
-    for ref in legacy_symbol_refs:
-        symbol = cast(str, ref.value["symbol"])
-        if symbol in resolved:
-            resolved_names[ref.path] = symbol
-    for ref in legacy_address_refs:
-        address = manual_address(ref.value)
-        if address is None:
-            continue
-        size = manual_size(ref.value)
-        if size is not None and (address, size) in ambiguous_members:
-            continue
-        match = resolved_address_symbol(
-            address,
-            size,
+    legacy_symbol_paths = {ref.path for ref in legacy_symbol_refs}
+    legacy_address_paths = {ref.path for ref in legacy_address_refs}
+    legacy_refs_by_pname: dict[str | None, list[EntryRef]] = {}
+    for ref in [*legacy_symbol_refs, *legacy_address_refs]:
+        pname = pnames_by_path.get(ref.path)
+        legacy_refs_by_pname.setdefault(pname, []).append(ref)
+
+    for pname, scoped_refs in legacy_refs_by_pname.items():
+        scoped_symbol_refs = [
+            ref for ref in scoped_refs if ref.path in legacy_symbol_paths
+        ]
+        scoped_address_refs = [
+            ref for ref in scoped_refs if ref.path in legacy_address_paths
+        ]
+        symbol_names = [
+            cast(str, ref.value["symbol"]) for ref in scoped_symbol_refs
+        ]
+        address_entries = [ref.value for ref in scoped_address_refs]
+        if pname is None:
+            resolved = catalog.resolve_names(symbol_names)
+            resolved_members, ambiguous_members = (
+                catalog.resolve_members_by_address(
+                    entry_sized_addresses(address_entries)
+                )
+            )
+            resolved_by_address = catalog.resolve_addresses(
+                entry_addresses(address_entries)
+            )
+        else:
+            resolved = catalog.resolve_names(symbol_names, pname=pname)
+            resolved_members, ambiguous_members = (
+                catalog.resolve_members_by_address(
+                    entry_sized_addresses(address_entries),
+                    pname=pname,
+                )
+            )
+            resolved_by_address = catalog.resolve_addresses(
+                entry_addresses(address_entries),
+                pname=pname,
+            )
+        enrich_legacy_refs(
+            scoped_refs,
+            resolved,
             resolved_members,
+            ambiguous_members,
             resolved_by_address,
         )
-        if match is not None:
-            resolved_names[ref.path] = match.name
+
+        unresolved_names = set(missing_symbols(resolved.values(), symbol_names))
+        for ref in scoped_symbol_refs:
+            symbol = cast(str, ref.value["symbol"])
+            if symbol in unresolved_names:
+                missing_by_path[ref.path] = symbol
+                if location_refs:
+                    error = f"symbol not found: {symbol}"
+                    enrich_property(
+                        ref.value,
+                        f"symbol {symbol!r}",
+                        "error",
+                        error,
+                        ref.value.get("error") == error,
+                    )
+            else:
+                resolved_names[ref.path] = symbol
+        for ref in scoped_address_refs:
+            address = manual_address(ref.value)
+            if address is None:
+                continue
+            size = manual_size(ref.value)
+            if size is not None and (address, size) in ambiguous_members:
+                continue
+            match = resolved_address_symbol(
+                address,
+                size,
+                resolved_members,
+                resolved_by_address,
+            )
+            if match is not None:
+                resolved_names[ref.path] = match.name
 
     missing = [missing_by_path[ref.path] for ref in refs if ref.path in missing_by_path]
     symbols = [resolved_names[ref.path] for ref in refs if ref.path in resolved_names]

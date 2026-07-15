@@ -31,13 +31,16 @@ from pyts.trace.model import LocationSpec, ResolvedLocation, normalize_alias
 def resolve_locations(
     catalog: SymbolCatalog,
     entries: list[EntryRef],
+    pnames_by_path: dict[EntryPath, str] | None = None,
 ) -> tuple[dict[EntryPath, ResolvedLocation], dict[EntryPath, str]]:
     """Resolve location entries and return path-keyed matches and errors."""
 
     resolved: dict[EntryPath, ResolvedLocation] = {}
     errors: dict[EntryPath, str] = {}
+    pnames = pnames_by_path or {}
     for ref in entries:
         entry = ref.value
+        pname = pnames.get(ref.path)
         location = LocationSpec.from_yaml(entry["location"])
         if location is None:
             continue
@@ -46,9 +49,9 @@ def resolve_locations(
             if location.qualifier is not None
             else None
         )
-        candidates = catalog.candidates(qualifier)
+        candidates = catalog.candidates(qualifier, pname=pname)
         if not candidates:
-            errors[ref.path] = unresolved_qualifier_error(location)
+            errors[ref.path] = unresolved_qualifier_error(location, pname)
             continue
         opened: list[OpenSymbolFile] = []
         for candidate in candidates:
@@ -102,19 +105,23 @@ def resolve_location_from_candidates(
     return matches
 
 
-def unresolved_qualifier_error(location: LocationSpec) -> str:
+def unresolved_qualifier_error(
+    location: LocationSpec,
+    pname: str | None = None,
+) -> str:
     """Describe why a location qualifier selected no ELF files."""
 
     qualifier = location.qualifier
+    if pname is not None:
+        if qualifier is None:
+            return f"no ELF files are available for processor '{pname}'"
+        return f"location qualifier '{qualifier}' does not resolve to an ELF file for processor '{pname}'."
     if qualifier is None:
         return "no ELF files are available for location lookup"
     normalized = normalize_alias(qualifier)
     if looks_like_file_qualifier(normalized):
-        return (
-            "ELF file qualifier does not resolve to an existing ELF file: "
-            f"{qualifier}"
-        )
-    return f"project does not resolve to an existing ELF file: {qualifier}"
+        return f"ELF file qualifier '{qualifier}' does not resolve to an existing ELF file"
+    return f"project '{qualifier}' does not resolve to an existing ELF file"
 
 
 def looks_like_file_qualifier(qualifier: str) -> bool:

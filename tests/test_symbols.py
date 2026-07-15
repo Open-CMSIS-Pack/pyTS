@@ -25,13 +25,15 @@ from pyts.symbols import SymbolCatalog, SymbolFile
 
 def test_symbol_catalog_selects_qualified_files_in_order() -> None:
     files = [
-        SymbolFile(Path("first.elf"), frozenset({"first"}), "app"),
-        SymbolFile(Path("second.elf"), frozenset({"second"}), "net"),
+        SymbolFile(Path("first.elf"), frozenset({"first"}), "app", "CM7"),
+        SymbolFile(Path("second.elf"), frozenset({"second"}), "net", "CM4"),
     ]
 
     with SymbolCatalog(files) as catalog:
         assert catalog.candidates("net") == [files[1]]
         assert catalog.candidates("first") == [files[0]]
+        assert catalog.candidates(pname="CM7") == [files[0]]
+        assert catalog.candidates("app", pname="CM4") == []
         assert catalog.candidates() == files
 
 
