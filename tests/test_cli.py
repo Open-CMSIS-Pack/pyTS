@@ -37,8 +37,8 @@ def test_top_level_trace_setup_outputs_json(
         calls.append((path, allow_missing))
         return TraceSetupResult(
             cbuild_run=str(path),
-            ctrace=".cmsis/Target.ctrace.yml",
-            output=".trace/Target.ctrace-run.yml",
+            ctrace=".cmsis/Blinky+Target.ctrace.yml",
+            output=".trace/Blinky+Target.ctrace-run.yml",
             target="Target",
             symbols=["main"],
             missing=[],
@@ -52,8 +52,8 @@ def test_top_level_trace_setup_outputs_json(
     payload = json.loads(capsys.readouterr().out)
     assert payload == {
         "cbuild_run": str(cbuild_run),
-        "ctrace": ".cmsis/Target.ctrace.yml",
-        "output": ".trace/Target.ctrace-run.yml",
+        "ctrace": ".cmsis/Blinky+Target.ctrace.yml",
+        "output": ".trace/Blinky+Target.ctrace-run.yml",
         "target": "Target",
         "symbols": ["main"],
         "missing": [],
@@ -71,8 +71,8 @@ def test_top_level_trace_setup_allows_missing_symbols(
         calls.append((path, allow_missing))
         return TraceSetupResult(
             cbuild_run=str(path),
-            ctrace=".cmsis/Target.ctrace.yml",
-            output=".trace/Target.ctrace-run.yml",
+            ctrace=".cmsis/Blinky+Target.ctrace.yml",
+            output=".trace/Blinky+Target.ctrace-run.yml",
             target="Target",
             symbols=[],
             missing=["missing"],

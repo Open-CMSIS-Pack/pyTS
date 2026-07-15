@@ -57,7 +57,12 @@ def _write_trace_project(
     cmsis.mkdir()
 
     target = "NUCLEO-L552ZE-Q"
-    trace_name = f"{target}@{target_set}" if target_set else target
+    target_name = (
+        f"{target}@{target_set}"
+        if target_set and target_set != "<default>"
+        else target
+    )
+    trace_name = f"Blinky+{target_name}"
     cbuild_run = out / f"Blinky+{target}.cbuild-run.yml"
 
     output_entries = outputs or [
@@ -2257,13 +2262,15 @@ def test_setup_trace_resolves_symbol_keys_anywhere_in_yaml(
     assert output["ctrace"]["events"][3]["also_ignored"] == {"symbol": 123}
 
 
-def test_setup_trace_supports_target_type_without_target_set(
+@pytest.mark.parametrize("target_set", ["", "<default>"])
+def test_setup_trace_supports_target_type_without_explicit_target_set(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    target_set: str,
 ) -> None:
     project, cbuild_run, trace_name = _write_trace_project(
         tmp_path,
-        target_set="",
+        target_set=target_set,
     )
 
     def fake_resolve_symbols(path: Path, names: list[str]) -> list[SymbolInfo]:
@@ -2274,7 +2281,7 @@ def test_setup_trace_supports_target_type_without_target_set(
     with pytest.raises(ValueError, match="missing symbols: main"):
         setup_trace(cbuild_run)
 
-    assert trace_name == "NUCLEO-L552ZE-Q"
+    assert trace_name == "Blinky+NUCLEO-L552ZE-Q"
     assert not (project / ".trace" / f"{trace_name}.ctrace-run.yml").exists()
 
 
@@ -2490,7 +2497,7 @@ def test_trace_setup_cli_outputs_json_summary(
     assert main([str(cbuild_run), "--format", "json"]) == 0
 
     payload = json.loads(capsys.readouterr().out)
-    assert payload["target"] == trace_name
+    assert payload["target"] == "NUCLEO-L552ZE-Q@SWO"
     assert payload["symbols"] == ["main"]
     assert payload["missing"] == []
     assert Path(payload["output"]).exists()

@@ -60,9 +60,9 @@ Generate a trace run configuration from a CMSIS cbuild-run file:
 pyts <cbuild-run.yml>
 ```
 
-The command reads `.cmsis/<target-type>[@<target-set>].ctrace.yml`, resolves
+The command reads `.cmsis/<solution>+<target-type>[@<target-set>].ctrace.yml`, resolves
 symbols from the cbuild-run ELF outputs, and writes the generated trace setup to
-`.trace/<target-type>[@<target-set>].ctrace-run.yml`.
+`.trace/<solution>+<target-type>[@<target-set>].ctrace-run.yml`.
 
 When `cbuild-run.system-resources.processors` is available, pyTS uses each
 processor's `core` and `pname` to generate CMSIS `ctrace-run.ctrace-refs` entries.

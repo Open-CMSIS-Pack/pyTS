@@ -33,25 +33,35 @@ def load_trace_project(cbuild_run_path: Path) -> TraceProject:
     cbuild_run = required_mapping(read_yaml(cbuild_run_path), "cbuild-run file")
     data = required_mapping(cbuild_run.get("cbuild-run"), "cbuild-run")
     root = project_root(cbuild_run_path, data)
+    solution_name = (
+        solution(cbuild_run_path, data).name
+            .removesuffix(".yaml")
+            .removesuffix(".yml")
+            .removesuffix(".csolution")
+    )
     target = target_name(data)
     return TraceProject(
         cbuild_run_path=cbuild_run_path,
         cbuild_run=data,
         project_root=root,
         target=target,
-        ctrace_path=root / ".cmsis" / f"{target}.ctrace.yml",
-        output_path=root / ".trace" / f"{target}.ctrace-run.yml",
+        ctrace_path=root / ".cmsis" / f"{solution_name}+{target}.ctrace.yml",
+        output_path=root / ".trace" / f"{solution_name}+{target}.ctrace-run.yml",
         symbol_files=tuple(symbol_files(cbuild_run_path, data, root)),
     )
 
-
-def project_root(cbuild_run_path: Path, cbuild_run: YamlMapping) -> Path:
-    """Derive the project root from the cbuild solution path."""
+def solution(cbuild_run_path: Path, cbuild_run: YamlMapping) -> Path:
+    """Return the solution name from the cbuild-run file."""
 
     solution = cbuild_run.get("solution")
     if not isinstance(solution, str) or not solution:
         raise ValueError("cbuild-run.solution is required")
-    return (cbuild_run_path.parent / solution).resolve(strict=False).parent
+    return (cbuild_run_path.parent / solution).resolve(strict=False)
+
+def project_root(cbuild_run_path: Path, cbuild_run: YamlMapping) -> Path:
+    """Derive the project root from the cbuild solution path."""
+
+    return solution(cbuild_run_path, cbuild_run).parent
 
 
 def target_name(cbuild_run: YamlMapping) -> str:
@@ -63,7 +73,7 @@ def target_name(cbuild_run: YamlMapping) -> str:
     target_set = cbuild_run.get("target-set")
     return (
         f"{target_type}@{target_set}"
-        if isinstance(target_set, str) and target_set
+        if isinstance(target_set, str) and target_set and target_set != "<default>"
         else target_type
     )
 
