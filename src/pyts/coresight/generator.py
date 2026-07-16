@@ -74,6 +74,12 @@ _EVENT_BITS = {
     "FOLDCNT": 21,
 }
 
+_PC_SAMPLING_PERIODS: dict[str, tuple[int, int]] = {
+    f"{cyctap}*{postpreset}": (cyctap_bit, postpreset - 1)
+    for cyctap, cyctap_bit in ((64, 0), (1024, 1))
+    for postpreset in range(1, 17)
+}
+
 
 @dataclass(frozen=True)
 class FeatureSpec:
@@ -404,17 +410,15 @@ def _pc_sampling_regs(value: JsonValue) -> list[YamlMapping]:
 
     if value is not None and not isinstance(value, dict):
         raise ValueError("pcsampling must be an empty node or mapping")
-    period = 0 if value is None else value.get("period", 0)
-    if period == 0:
+    if value is None or "period" not in value:
         return [_reg("DWT_CTRL", 0, 1 << 12)]
-    if not isinstance(period, int) or isinstance(period, bool):
-        raise ValueError("pcsampling.period must be an integer")
-    if period % 64 == 0 and 1 <= period // 64 <= 16:
-        cyctap, postpreset = 0, period // 64 - 1
-    elif period % 1024 == 0 and 1 <= period // 1024 <= 16:
-        cyctap, postpreset = 1, period // 1024 - 1
-    else:
-        raise ValueError("pcsampling.period is not supported by DWT")
+    period = value["period"]
+    if not isinstance(period, str):
+        raise ValueError("pcsampling.period must be a CYCTAP*POSTPRESET literal")
+    encoding = _PC_SAMPLING_PERIODS.get(period)
+    if encoding is None:
+        raise ValueError(f"unsupported pcsampling.period: {period}")
+    cyctap, postpreset = encoding
     ctrl = (1 << 12) | (cyctap << 9) | (postpreset << 1) | 1
     mask = (1 << 12) | (1 << 9) | (0xF << 1) | 1
     return [_reg("DWT_CTRL", ctrl, mask), *_dwt_forwarding_regs()]

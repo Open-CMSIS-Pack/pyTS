@@ -731,6 +731,87 @@ def test_generate_ctrace_run_uses_dwtv2_comparator_model() -> None:
     ]
 
 
+@pytest.mark.parametrize("cyctap", [64, 1024])
+@pytest.mark.parametrize("postpreset", range(1, 17))
+def test_generate_ctrace_run_encodes_pc_sampling_period_literals(
+    cyctap: int,
+    postpreset: int,
+) -> None:
+    output = cast(
+        dict[str, Any],
+        generate_ctrace_run(
+            {
+                "ctrace": {
+                    "setup": [
+                        {"pcsampling": {"period": f"{cyctap}*{postpreset}"}}
+                    ]
+                }
+            },
+            [Processor.from_core("CM4", None)],
+        ),
+    )
+
+    cyctap_bit = 0 if cyctap == 64 else 1
+    expected_ctrl = (
+        (1 << 12)
+        | (cyctap_bit << 9)
+        | ((postpreset - 1) << 1)
+        | 1
+    )
+    assert output["ctrace-run"]["ctrace-refs"][0]["regs"] == [
+        {"name": "DWT_CTRL", "value": expected_ctrl, "mask": 0x121F},
+        {"name": "ITM_TCR", "value": 9, "mask": 9},
+    ]
+
+
+@pytest.mark.parametrize(
+    "period",
+    [
+        0,
+        64,
+        True,
+        None,
+        "64*0",
+        "64*17",
+        "1024*0",
+        "1024*17",
+        "128*1",
+        "64 * 1",
+    ],
+)
+def test_generate_ctrace_run_rejects_invalid_pc_sampling_period_literals(
+    period: Any,
+) -> None:
+    output = cast(
+        dict[str, Any],
+        generate_ctrace_run(
+            {"ctrace": {"setup": [{"pcsampling": {"period": period}}]}},
+            [Processor.from_core("CM4", None)],
+        ),
+    )
+
+    ref = output["ctrace-run"]["ctrace-refs"][0]
+    assert "error" in ref
+    assert "regs" not in ref
+
+
+@pytest.mark.parametrize("pcsampling", [None, {}])
+def test_generate_ctrace_run_disables_pc_sampling_without_a_period(
+    pcsampling: Any,
+) -> None:
+    output = cast(
+        dict[str, Any],
+        generate_ctrace_run(
+            {"ctrace": {"setup": [{"pcsampling": pcsampling}]}},
+            [Processor.from_core("CM4", None)],
+        ),
+    )
+
+    assert output["ctrace-run"]["ctrace-refs"][0]["regs"] == [
+        {"name": "DWT_CTRL", "value": 0, "mask": 1 << 12}
+    ]
+
+
 def _generate_data_refs(
     entries: list[dict[str, Any]],
     processor: Processor,
