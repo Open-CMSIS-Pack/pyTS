@@ -26,12 +26,15 @@ from pyts.coresight.model import (
     DataOutput,
     DataTraceRequest,
     RegisterWrite,
+    processor_class,
 )
 
 
 @dataclass(frozen=True)
 class DwtV1Encoder:
     """Stateless DWTv1 request encoder."""
+
+    core: str
 
     def encode(
         self,
@@ -69,24 +72,28 @@ class DwtV1Encoder:
             _forwarding_write(),
         ]
 
-    @staticmethod
-    def _validate(request: DataTraceRequest) -> int:
+    def _validate(self, request: DataTraceRequest) -> int:
         """Validate DWTv1 constraints and return the output function code."""
 
+        dwt_unit = f"{processor_class(self.core)} DWT-Unit"
         if request.size & (request.size - 1):
-            raise ValueError("DWTv1 data.size must be a power of two")
+            raise ValueError(f"{dwt_unit} data.size must be a power of two")
         if request.size > 1 << 31:
-            raise ValueError("DWTv1 data.size exceeds the address mask capability")
+            raise ValueError(
+                f"{dwt_unit} data.size exceeds the address mask capability"
+            )
         if request.address % request.size:
-            raise ValueError("DWTv1 data address must be aligned to data.size")
+            raise ValueError(
+                f"{dwt_unit} data address must be aligned to data.size"
+            )
         if request.output not in _FUNCTIONS:
             raise ValueError(
-                f"DWTv1 does not support data.output {request.output.value!r}"
+                f"{dwt_unit} does not support data.output {request.output.value!r}"
             )
         function = _FUNCTIONS[request.output].get(request.access)
         if function is None:
             raise ValueError(
-                f"DWTv1 data.output {request.output.value!r} does not support "
+                f"{dwt_unit} data.output {request.output.value!r} does not support "
                 f"access {request.access.value}"
             )
         return function
@@ -106,7 +113,8 @@ class DwtV1CoreSight(CoreSight):
             return
         if self.comparators.next_index != 0:
             raise ValueError(
-                "portable DWTv1 data.match requires comparators 0 and 1 "
+                f"{processor_class(self.core)} DWT-Unit portable data.match "
+                "requires comparators 0 and 1 "
                 "before other data trace requests"
             )
         self.comparators.allocate(2)
@@ -116,14 +124,15 @@ class DwtV1CoreSight(CoreSight):
     def _encode_data(self, request: DataTraceRequest) -> list[RegisterWrite]:
         """Encode without consuming allocation state when validation fails."""
 
-        encoder = DwtV1Encoder()
+        encoder = DwtV1Encoder(self.core)
         if request.match is not None:
             writes = encoder.encode(request, [0, 1])
             if not self._match_pair_reserved:
                 self.reserve_data_match_pair()
             if not self._match_pair_available:
                 raise ValueError(
-                    "DWTv1 supports only one portable data.match using "
+                    f"{processor_class(self.core)} DWT-Unit supports only one "
+                    "portable data.match using "
                     "comparators 0 and 1"
                 )
             self._match_pair_available = False

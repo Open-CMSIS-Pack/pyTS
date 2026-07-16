@@ -33,6 +33,72 @@ class DwtVersion(IntEnum):
     V2 = 2
 
 
+_CORE_ALIAS_GROUPS: dict[str, tuple[str, ...]] = {
+    "MC1": ("MC1", "STAR-MC1"),
+    "MC3": ("MC3", "STAR-MC3"),
+    "SC000": ("SC000", "SecurCore SC000"),
+    "SC300": ("SC300", "SecurCore SC300"),
+    "CM0": ("CM0", "Cortex-M0"),
+    "CM0+": ("CM0+", "CM0PLUS", "Cortex-M0+", "Cortex-M0plus"),
+    "CM1": ("CM1", "Cortex-M1"),
+    "CM23": ("CM23", "Cortex-M23"),
+    "CM3": ("CM3", "Cortex-M3"),
+    "CM33": ("CM33", "Cortex-M33"),
+    "CM35P": ("CM35P", "Cortex-M35P"),
+    "CM52": ("CM52", "Cortex-M52"),
+    "CM55": ("CM55", "Cortex-M55"),
+    "CM85": ("CM85", "Cortex-M85"),
+    "CM4": ("CM4", "Cortex-M4"),
+    "CM7": ("CM7", "Cortex-M7"),
+    "ARMV8MBL": ("ARMV8MBL",),
+    "ARMV8MML": ("ARMV8MML",),
+    "ARMV81MML": ("ARMV81MML",),
+}
+
+_CORE_ALIASES: dict[str, str] = {
+    alias.casefold(): normalized
+    for normalized, aliases in _CORE_ALIAS_GROUPS.items()
+    for alias in aliases
+}
+
+_PROCESSOR_CLASSES = {
+    "MC1": "STAR-MC1",
+    "MC3": "STAR-MC3",
+    "SC000": "SecurCore SC000",
+    "SC300": "SecurCore SC300",
+    "CM0": "Cortex-M0",
+    "CM0+": "Cortex-M0+",
+    "CM1": "Cortex-M1",
+    "CM23": "Cortex-M23",
+    "CM3": "Cortex-M3",
+    "CM33": "Cortex-M33",
+    "CM35P": "Cortex-M35P",
+    "CM52": "Cortex-M52",
+    "CM55": "Cortex-M55",
+    "CM85": "Cortex-M85",
+    "CM4": "Cortex-M4",
+    "CM7": "Cortex-M7",
+    "ARMV8MBL": "ARMV8MBL",
+    "ARMV8MML": "ARMV8MML",
+    "ARMV81MML": "ARMV81MML",
+}
+
+_DWT_VERSIONS = {
+    "CM3": DwtVersion.V1,
+    "CM4": DwtVersion.V1,
+    "CM7": DwtVersion.V1,
+    "SC300": DwtVersion.V1,
+    "MC1": DwtVersion.V2,
+    "MC3": DwtVersion.V2,
+    "CM23": DwtVersion.V2,
+    "CM33": DwtVersion.V2,
+    "CM35P": DwtVersion.V2,
+    "CM52": DwtVersion.V2,
+    "CM55": DwtVersion.V2,
+    "CM85": DwtVersion.V2,
+}
+
+
 class DataAccess(str, Enum):
     """Memory access direction selected for data tracing."""
 
@@ -170,18 +236,11 @@ class ComparatorAllocator:
     def allocate(
         self,
         count: int,
-        *,
-        data_address_with_value: bool = False,
     ) -> list[int]:
         """Reserve consecutive comparator indices for one encoded request."""
 
         if count <= 0:
             raise ValueError("comparator allocation count must be positive")
-        if data_address_with_value and self.next_index >= 4:
-            raise ValueError(
-                "DWTv2 Data Address With Value requires an address comparator "
-                "with index 0 through 3"
-            )
         indices = list(range(self.next_index, self.next_index + count))
         self.next_index += count
         return indices
@@ -204,10 +263,28 @@ class CoreSight(ABC):
         """Return architecture-specific writes for one request."""
 
 
-def normalize_core(core: str) -> str:
-    """Normalize common CMSIS spellings of an Arm processor core."""
+def normalize_core(core: str) -> str | None:
+    """Resolve a known processor spelling to its CMSIS device enum literal."""
 
-    return core.upper().replace("CORTEX-", "C").replace("CORTEX", "C")
+    return _CORE_ALIASES.get(core.casefold())
+
+
+def processor_class(core: str) -> str:
+    """Return the fixed user-facing class name for a known processor."""
+
+    normalized = normalize_core(core)
+    if normalized is None:
+        return core
+    return _PROCESSOR_CLASSES.get(normalized, core)
+
+
+def dwt_version_for_core(core: str) -> DwtVersion | None:
+    """Return the DWT generation for a known processor spelling."""
+
+    normalized = normalize_core(core)
+    if normalized is None:
+        return None
+    return _DWT_VERSIONS.get(normalized)
 
 
 def _integer(value: JsonValue) -> int | None:

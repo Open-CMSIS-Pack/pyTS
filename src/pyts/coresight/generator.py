@@ -29,7 +29,7 @@ from pyts.coresight.model import (
     DataTraceRequest,
     DwtVersion,
     RegisterWrite,
-    normalize_core,
+    dwt_version_for_core,
 )
 from pyts.coresight.v1 import DwtV1CoreSight
 from pyts.coresight.v2 import DwtV2CoreSight
@@ -52,7 +52,7 @@ class Processor:
             self.dwt_version, DwtVersion
         ):
             object.__setattr__(self, "dwt_version", DwtVersion(self.dwt_version))
-        expected = _dwt_version_for_core(self.core)
+        expected = dwt_version_for_core(self.core)
         if self.dwt_version != expected:
             raise ValueError(
                 f"DWT version for core {self.core!r} must be "
@@ -63,21 +63,7 @@ class Processor:
     def from_core(cls, core: str, pname: str | None) -> Processor:
         """Create a processor whose DWT generation is derived from its core."""
 
-        return cls(core=core, pname=pname, dwt_version=_dwt_version_for_core(core))
-
-_DWT_V1_CORES = frozenset({"CM3", "CM4", "CM7", "SC300"})
-_DWT_V2_CORES = frozenset({"CM23", "CM33", "CM35P", "CM52", "CM55", "CM85"})
-
-
-def _dwt_version_for_core(core: str) -> DwtVersion | None:
-    """Return the DWT generation associated with *core*, if supported."""
-
-    normalized = normalize_core(core)
-    if normalized in _DWT_V1_CORES:
-        return DwtVersion.V1
-    if normalized in _DWT_V2_CORES:
-        return DwtVersion.V2
-    return None
+        return cls(core=core, pname=pname, dwt_version=dwt_version_for_core(core))
 
 _EVENT_BITS = {
     "CYCCNT": 22,

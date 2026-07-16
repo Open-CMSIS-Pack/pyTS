@@ -31,6 +31,9 @@ from pyts.coresight.model import (
     DataMatch,
     DataOutput,
     DataTraceRequest,
+    DwtVersion,
+    normalize_core,
+    processor_class,
 )
 from pyts.coresight.v1 import DwtV1CoreSight
 from pyts.coresight.v2 import DwtV2CoreSight
@@ -640,6 +643,61 @@ def test_setup_trace_scopes_refs_and_reports_unsupported_core(
     ]
 
 
+@pytest.mark.parametrize(
+    ("literal", "display", "version"),
+    [
+        ("MC1", "STAR-MC1", DwtVersion.V2),
+        ("MC3", "STAR-MC3", DwtVersion.V2),
+        ("SC000", "SecurCore SC000", None),
+        ("SC300", "SecurCore SC300", DwtVersion.V1),
+        ("CM0", "Cortex-M0", None),
+        ("CM0+", "Cortex-M0+", None),
+        ("CM1", "Cortex-M1", None),
+        ("CM23", "Cortex-M23", DwtVersion.V2),
+        ("CM3", "Cortex-M3", DwtVersion.V1),
+        ("CM33", "Cortex-M33", DwtVersion.V2),
+        ("CM35P", "Cortex-M35P", DwtVersion.V2),
+        ("CM52", "Cortex-M52", DwtVersion.V2),
+        ("CM55", "Cortex-M55", DwtVersion.V2),
+        ("CM85", "Cortex-M85", DwtVersion.V2),
+        ("CM4", "Cortex-M4", DwtVersion.V1),
+        ("CM7", "Cortex-M7", DwtVersion.V1),
+        ("ARMV8MBL", "ARMV8MBL", None),
+        ("ARMV8MML", "ARMV8MML", None),
+        ("ARMV81MML", "ARMV81MML", None),
+    ],
+)
+def test_core_metadata_uses_normalized_device_literals(
+    literal: str,
+    display: str,
+    version: DwtVersion | None,
+) -> None:
+    assert normalize_core(literal.lower()) == literal
+    assert normalize_core(display.swapcase()) == literal
+    assert processor_class(literal) == display
+    assert Processor.from_core(literal, None).dwt_version == version
+
+
+@pytest.mark.parametrize(
+    ("core", "literal"),
+    [
+        ("STAR-MC3", "MC3"),
+        ("star-mc3", "MC3"),
+        ("MC3", "MC3"),
+        ("Cortex-M0+", "CM0+"),
+        ("Cortex-M0plus", "CM0+"),
+        ("cOrTeX-M0pLuS", "CM0+"),
+        ("CM0+", "CM0+"),
+        ("CM0PLUS", "CM0+"),
+    ],
+)
+def test_core_aliases_resolve_case_insensitively(
+    core: str,
+    literal: str,
+) -> None:
+    assert normalize_core(core) == literal
+
+
 def test_generate_ctrace_run_uses_dwtv2_comparator_model() -> None:
     ctrace: dict[str, Any] = {
         "ctrace": {
@@ -687,6 +745,37 @@ def _generate_data_refs(
     return output, cast(
         list[dict[str, Any]],
         output["ctrace-run"]["ctrace-refs"],
+    )
+
+
+@pytest.mark.parametrize(
+    ("core", "display"),
+    [("star-mc1", "STAR-MC1"), ("STAR-MC3", "STAR-MC3")],
+)
+def test_star_cores_support_dwtv2_data_trace(
+    core: str,
+    display: str,
+) -> None:
+    processor = Processor.from_core(core, None)
+    assert processor.dwt_version == DwtVersion.V2
+
+    _output, refs = _generate_data_refs(
+        [
+            {"location": "value", "address": 0x20000000},
+            {
+                "location": "address",
+                "address": 0x20000004,
+                "size": 1,
+                "output": "address",
+            },
+        ],
+        processor,
+    )
+
+    assert refs[0]["regs"][0] == {"name": "DWT_COMP0", "value": 0x20000000}
+    assert refs[1]["error"] == (
+        f"{display} DWT-Unit data.output 'address' cannot emit an address "
+        "for a one-byte range"
     )
 
 
@@ -1155,7 +1244,8 @@ def test_dwtv1_uses_one_portable_match_pair_without_consuming_later_indices() ->
     assert refs[0]["regs"][0]["name"] == "DWT_COMP0"
     assert refs[0]["regs"][3]["name"] == "DWT_COMP1"
     assert refs[1]["error"] == (
-        "DWTv1 supports only one portable data.match using comparators 0 and 1"
+        "Cortex-M4 DWT-Unit supports only one portable data.match using "
+        "comparators 0 and 1"
     )
     assert "regs" not in refs[1]
     assert refs[2]["regs"][0]["name"] == "DWT_COMP2"
@@ -1309,6 +1399,17 @@ def test_generate_ctrace_run_validates_dwtv1_data_configuration(
     assert "regs" not in refs[0]
 
 
+def test_dwtv1_error_names_the_processor_class() -> None:
+    _output, refs = _generate_data_refs(
+        [{"location": "counter", "address": 0x20000000, "size": 3}],
+        Processor(core="CM7", pname=None, dwt_version=1),
+    )
+
+    assert refs[0]["error"] == (
+        "Cortex-M7 DWT-Unit data.size must be a power of two"
+    )
+
+
 @pytest.mark.parametrize(
     ("entry", "error"),
     [
@@ -1343,13 +1444,34 @@ def test_generate_ctrace_run_rejects_unrepresentable_dwtv2_data(
     assert "regs" not in refs[0]
 
 
+def test_dwtv2_error_names_the_processor_class() -> None:
+    _output, refs = _generate_data_refs(
+        [
+            {
+                "location": "counter",
+                "address": 0x20000000,
+                "size": 1,
+                "output": "address",
+            }
+        ],
+        Processor(core="CM33", pname=None, dwt_version=2),
+    )
+
+    assert refs[0]["error"] == (
+        "Cortex-M33 DWT-Unit data.output 'address' cannot emit an address "
+        "for a one-byte range"
+    )
+
+
 def test_generate_ctrace_run_rejects_cortex_m23_data_trace() -> None:
     _output, refs = _generate_data_refs(
         [{"location": "counter", "address": 0x20000000}],
         Processor(core="Cortex-M23", pname=None, dwt_version=2),
     )
 
-    assert refs[0]["error"] == "Cortex-M23 does not support DWT data trace packets"
+    assert refs[0]["error"] == (
+        "Cortex-M23 DWT-Unit does not support data trace packets"
+    )
     assert "regs" not in refs[0]
 
 

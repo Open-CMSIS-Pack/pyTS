@@ -28,6 +28,7 @@ from pyts.coresight.model import (
     DataTraceRequest,
     RegisterWrite,
     normalize_core,
+    processor_class,
 )
 
 
@@ -51,8 +52,8 @@ class DwtV2Encoder:
         use_range, uses_value = self._address_mode(request)
         if use_range and request.size == 1:
             raise ValueError(
-                f"DWTv2 data.output {request.output.value!r} cannot emit an address "
-                "for a one-byte range"
+                f"{processor_class(self.core)} DWT-Unit data.output "
+                f"{request.output.value!r} cannot emit an address for a one-byte range"
             )
         return (2 if use_range else 1), uses_value
 
@@ -67,16 +68,22 @@ class DwtV2Encoder:
         """Reject cores that cannot emit DWT data trace packets."""
 
         if normalize_core(self.core) == "CM23":
-            raise ValueError("Cortex-M23 does not support DWT data trace packets")
+            raise ValueError(
+                "Cortex-M23 DWT-Unit does not support data trace packets"
+            )
 
-    @staticmethod
-    def _validate_match(request: DataTraceRequest, match: DataMatch) -> None:
+    def _validate_match(self, request: DataTraceRequest, match: DataMatch) -> None:
         """Validate DWTv2 linked data-value matching constraints."""
 
+        dwt_unit = f"{processor_class(self.core)} DWT-Unit"
         if request.size != match.size:
-            raise ValueError("DWTv2 data.size must equal data.match.size")
+            raise ValueError(
+                f"{dwt_unit} data.size must equal data.match.size"
+            )
         if request.address % match.size:
-            raise ValueError("DWTv2 match address must be aligned to data.match.size")
+            raise ValueError(
+                f"{dwt_unit} match address must be aligned to data.match.size"
+            )
 
     @staticmethod
     def _address_mode(request: DataTraceRequest) -> tuple[bool, bool]:
@@ -164,10 +171,12 @@ class DwtV2CoreSight(CoreSight):
 
         encoder = DwtV2Encoder(self.core)
         count, restricted = encoder.allocation_count(request)
-        indices = self.comparators.allocate(
-            count,
-            data_address_with_value=restricted,
-        )
+        if restricted and self.comparators.next_index >= 4:
+            raise ValueError(
+                f"{processor_class(self.core)} DWT-Unit Data Address With Value "
+                "requires an address comparator with index 0 through 3"
+            )
+        indices = self.comparators.allocate(count)
         return encoder.encode(request, indices)
 
 
