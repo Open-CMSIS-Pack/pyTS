@@ -38,7 +38,7 @@ from pyts.elf import MemberInfo, SymbolInfo
 from pyts.trace import setup_trace
 from pyts.trace import transform_trace_document
 from pyts.symbols import SymbolCatalog
-from pyts.yaml_io import read_yaml, write_yaml
+from pyts.yaml_io import HexInt, read_yaml, write_yaml
 
 
 def _write_trace_project(
@@ -1480,7 +1480,7 @@ def test_generate_ctrace_run_serializes_match_registers_as_hex(tmp_path: Path) -
                 "address": 0x20000000,
                 "size": 2,
                 "output": "match",
-                "match": {"value": 0x1234, "size": 2},
+                "match": {"value": HexInt(0x1234), "size": 2},
             }
         ],
         Processor(core="CM33", pname=None, dwt_version=2),
@@ -1490,6 +1490,7 @@ def test_generate_ctrace_run_serializes_match_registers_as_hex(tmp_path: Path) -
     write_yaml(path, output)
 
     text = path.read_text(encoding="utf-8")
+    assert "    value: 0x00001234" in text
     assert "value: 0x12341234" in text
     assert "value: 0x0000042b" in text
 
@@ -1627,15 +1628,15 @@ def test_setup_trace_reports_unresolved_project_and_file_qualifiers(
                         {
                             "location": "OtherProject|main",
                             "error": (
-                                "project does not resolve to an existing ELF file: "
-                                "OtherProject"
+                                "project 'OtherProject' does not resolve to an "
+                                "existing ELF file"
                             ),
                         },
                         {
                             "location": "Other.axf|main",
                             "error": (
-                                "ELF file qualifier does not resolve to an existing "
-                                "ELF file: Other.axf"
+                                "ELF file qualifier 'Other.axf' does not resolve to "
+                                "an existing ELF file"
                             ),
                         },
                     ]
@@ -1738,16 +1739,17 @@ def test_setup_trace_enriches_numeric_location_from_address(
     result = setup_trace(cbuild_run)
 
     assert result.symbols == ["main"]
-    assert read_yaml(project / ".trace" / f"{trace_name}.ctrace-run.yml") == {
+    output_path = project / ".trace" / f"{trace_name}.ctrace-run.yml"
+    assert read_yaml(output_path) == {
         "ctrace": {
             "setup": [
                 {
                     "data": [
                         {
-                            "location": "0x8000100",
+                            "location": 0x08000100,
                             "symbol-file": str(expected_elf.resolve(strict=False)),
                             "symbol": "main",
-                            "address": "0x8000100",
+                            "address": 0x08000100,
                             "size": 64,
                             "type": "func",
                         }
@@ -1756,6 +1758,114 @@ def test_setup_trace_enriches_numeric_location_from_address(
             ]
         }
     }
+    output_text = output_path.read_text(encoding="utf-8")
+    assert "location: 0x08000100" in output_text
+    assert "address: 0x08000100" in output_text
+
+
+@pytest.mark.parametrize("location", ["0x20001000", 0x20001000])
+def test_setup_trace_accepts_anonymous_fixed_address(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    location: str | int,
+) -> None:
+    ctrace = {
+        "ctrace": {
+            "setup": [
+                {
+                    "pname": "CM4",
+                    "data": [{"location": location, "size": 4}],
+                }
+            ]
+        }
+    }
+    project, cbuild_run, trace_name = _write_trace_project(
+        tmp_path,
+        ctrace=ctrace,
+        outputs=[
+            {
+                "file": "Blinky/CM4/Blinky.axf",
+                "type": "elf",
+                "pname": "CM4",
+            }
+        ],
+        processors=[{"core": "CM4", "pname": "CM4"}],
+    )
+    _patch_trace_resolver(monkeypatch, resolve_symbols=lambda *_args: [])
+
+    result = setup_trace(cbuild_run)
+
+    output_path = project / ".trace" / f"{trace_name}.ctrace-run.yml"
+    output = read_yaml(output_path)
+    entry = output["ctrace-run"]["setup"][0]["data"][0]
+    assert entry == {
+        "location": 0x20001000,
+        "size": 4,
+        "address": 0x20001000,
+    }
+    assert result.symbols == []
+    assert result.missing == []
+    ref = output["ctrace-run"]["ctrace-refs"][0]
+    assert "error" not in ref
+    assert ref["symbol-address"] == 0x20001000
+    assert ref["regs"][0] == {"name": "DWT_COMP0", "value": 0x20001000}
+    output_text = output_path.read_text(encoding="utf-8")
+    assert "location: 0x20001000" in output_text
+    assert "address: 0x20001000" in output_text
+
+
+@pytest.mark.parametrize(
+    "lookup_failure",
+    ["no processor candidate", "missing ELF", "ambiguous symbols"],
+)
+def test_setup_trace_ignores_fixed_address_lookup_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    lookup_failure: str,
+) -> None:
+    ctrace = {
+        "ctrace": {
+            "setup": [
+                {"pname": "CM4", "data": [{"location": 0x20001000}]}
+            ]
+        }
+    }
+    output_pname = "CM7" if lookup_failure == "no processor candidate" else "CM4"
+    outputs = [
+        {"file": "first.axf", "type": "elf", "pname": output_pname}
+    ]
+    if lookup_failure == "ambiguous symbols":
+        outputs.append(
+            {"file": "second.axf", "type": "elf", "pname": "CM4"}
+        )
+    project, cbuild_run, trace_name = _write_trace_project(
+        tmp_path,
+        ctrace=ctrace,
+        outputs=outputs,
+    )
+    if lookup_failure != "missing ELF":
+        fixed_symbol = SymbolInfo(
+            name="fixed",
+            address=0x20001000,
+            size=4,
+            type="object",
+            binding="global",
+            visibility="default",
+            section=".data",
+            table=".symtab",
+        )
+        _patch_trace_resolver(
+            monkeypatch,
+            resolve_symbols=lambda *_args: [fixed_symbol],
+        )
+
+    result = setup_trace(cbuild_run)
+
+    output = read_yaml(project / ".trace" / f"{trace_name}.ctrace-run.yml")
+    entry = output["ctrace"]["setup"][0]["data"][0]
+    assert entry == {"location": 0x20001000, "address": 0x20001000}
+    assert result.symbols == []
+    assert result.missing == []
 
 
 def test_setup_trace_preserves_consistent_manual_properties_without_warning(

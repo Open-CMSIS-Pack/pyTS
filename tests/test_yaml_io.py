@@ -49,6 +49,30 @@ def test_write_yaml_formats_hex_int_as_numeric_hex_scalar(tmp_path: Path) -> Non
     assert read_yaml(path) == {"address": 0x08000100, "mask": 0x303}
 
 
+def test_read_yaml_preserves_hexadecimal_but_not_decimal_integer_style(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.yml"
+    output = tmp_path / "output.yml"
+    source.write_text(
+        "match:\n"
+        "  value: 0x00001234\n"
+        "decimal: 4660\n",
+        encoding="utf-8",
+    )
+
+    data = read_yaml(source)
+
+    assert isinstance(data["match"]["value"], HexInt)
+    assert type(data["decimal"]) is int
+    write_yaml(output, data)
+    assert output.read_text(encoding="utf-8") == (
+        "match:\n"
+        "  value: 0x00001234\n"
+        "decimal: 4660\n"
+    )
+
+
 def test_write_yaml_preserves_valueless_nodes(tmp_path: Path) -> None:
     path = tmp_path / "flags.yml"
 

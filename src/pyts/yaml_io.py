@@ -28,8 +28,23 @@ class HexInt(int):
     """Integer serialized as an eight-digit hexadecimal YAML scalar."""
 
 
+class _PyTSSafeLoader(yaml.SafeLoader):
+    """Safe YAML loader that retains hexadecimal integer scalar intent."""
+
+
 class _PyTSSafeDumper(yaml.SafeDumper):
     """Safe YAML dumper with formatting isolated to pyTS output."""
+
+
+def _construct_int(loader: yaml.SafeLoader, node: yaml.ScalarNode) -> int:
+    """Construct an integer while marking hexadecimal source scalars."""
+
+    value = yaml.SafeLoader.construct_yaml_int(  # pyright: ignore[reportUnknownMemberType]
+        loader,
+        node,
+    )
+    scalar = node.value.replace("_", "").lstrip("+-").lower()
+    return HexInt(value) if scalar.startswith("0x") else value
 
 
 def _represent_hex_int(dumper: yaml.SafeDumper, value: HexInt) -> yaml.Node:
@@ -50,6 +65,7 @@ def _represent_none(dumper: yaml.SafeDumper, _value: None) -> yaml.Node:
     )
 
 
+_PyTSSafeLoader.add_constructor("tag:yaml.org,2002:int", _construct_int)
 _PyTSSafeDumper.add_representer(HexInt, _represent_hex_int)
 _PyTSSafeDumper.add_representer(type(None), _represent_none)
 
@@ -58,12 +74,13 @@ def read_yaml(path: str | Path) -> Any:
     """Read one YAML document from a filesystem path using safe parsing.
 
     ``path`` may be a string or ``Path``. The file is opened as UTF-8 text and
-    parsed with ``yaml.safe_load``, so arbitrary Python objects are not
-    constructed. Empty documents return ``None``, matching PyYAML behavior.
+    parsed with the isolated safe loader, so arbitrary Python objects are not
+    constructed. Hexadecimal integers retain their output formatting marker.
+    Empty documents return ``None``, matching PyYAML behavior.
     """
 
     with Path(path).open("r", encoding="utf-8") as stream:
-        return yaml.safe_load(stream)
+        return yaml.load(stream, Loader=_PyTSSafeLoader)
 
 
 def write_yaml(path: str | Path, data: Any, *, sort_keys: bool = False) -> None:

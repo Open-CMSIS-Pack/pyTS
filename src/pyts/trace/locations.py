@@ -44,6 +44,11 @@ def resolve_locations(
         location = LocationSpec.from_yaml(entry["location"])
         if location is None:
             continue
+        if location.address is not None:
+            match = resolve_fixed_address(catalog, location.address, entry, pname)
+            if match is not None:
+                resolved[ref.path] = match
+            continue
         qualifier = (
             normalize_alias(location.qualifier)
             if location.qualifier is not None
@@ -80,6 +85,24 @@ def resolve_locations(
         else:
             errors[ref.path] = not_found_error(location)
     return resolved, errors
+
+
+def resolve_fixed_address(
+    catalog: SymbolCatalog,
+    address: int,
+    entry: YamlMapping,
+    pname: str | None,
+) -> ResolvedLocation | None:
+    """Optionally enrich an authoritative address from one unique ELF match."""
+
+    matches: list[ResolvedLocation] = []
+    for candidate in catalog.candidates(pname=pname):
+        try:
+            opened = catalog.open(candidate)
+        except FileNotFoundError:
+            continue
+        matches.extend(resolve_location_address(opened, address, entry))
+    return matches[0] if len(matches) == 1 else None
 
 
 def resolve_location_from_candidates(

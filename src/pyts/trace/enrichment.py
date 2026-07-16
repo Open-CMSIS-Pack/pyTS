@@ -23,7 +23,8 @@ from collections.abc import Iterable
 
 from pyts.domain import EntryPath, EntryRef, JsonValue, YamlMapping
 from pyts.elf import MemberInfo, SymbolInfo
-from pyts.trace.model import ResolvedLocation
+from pyts.trace.model import LocationSpec, ResolvedLocation
+from pyts.yaml_io import HexInt
 
 
 def entry_addresses(entries: Iterable[YamlMapping]) -> list[int]:
@@ -121,6 +122,9 @@ def enrich_location_refs(
 
     for ref in entries:
         item = ref.value
+        location = LocationSpec.from_yaml(item.get("location"))
+        if location is not None and location.address is not None:
+            normalize_fixed_address(item, location.address)
         error = errors.get(ref.path)
         if error is not None:
             enrich_property(
@@ -151,6 +155,23 @@ def enrich_location_refs(
             ("type", symbol.type, item.get("type") == symbol.type),
         ):
             enrich_property(item, description, name, value, consistent)
+
+
+def normalize_fixed_address(item: YamlMapping, address: int) -> None:
+    """Normalize a fixed location and materialize its authoritative address."""
+
+    normalized = HexInt(address)
+    item["location"] = normalized
+    if "address" not in item or manual_address(item) == address:
+        item["address"] = normalized
+        return
+    enrich_property(
+        item,
+        f"location 0x{address:x}",
+        "address",
+        normalized,
+        False,
+    )
 
 
 def resolved_address_symbol(
