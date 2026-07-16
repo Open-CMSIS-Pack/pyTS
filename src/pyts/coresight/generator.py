@@ -388,19 +388,20 @@ def _event_regs(value: JsonValue) -> list[YamlMapping]:
 def _synchronization_regs(value: JsonValue) -> list[YamlMapping]:
     """Generate DWT synchronization configuration writes."""
 
-    if not isinstance(value, dict):
-        raise ValueError("synchronization entry must contain a period")
-    period_value = value.get("period")
-    if not isinstance(period_value, str):
-        raise ValueError("synchronization entry must contain a period")
-    period = period_value.upper().replace("/", "\\")
-    encodings = {"DWT\\16M": 0, "DWT\\64M": 1, "DWT\\256M": 2}
-    if period == "DWT\\0":
-        return [_reg("ITM_TCR", 0, 1 << 2)]
-    if period not in encodings:
-        raise ValueError(f"unsupported synchronization period: {value['period']}")
+    if not isinstance(value, dict) or "DWT" not in value:
+        raise ValueError("synchronization entry must contain DWT")
+    dwt = value["DWT"]
+    if isinstance(dwt, bool):
+        raise ValueError(f"unsupported synchronization.DWT: {dwt}")
+    if isinstance(dwt, int):
+        if dwt == 0:
+            return [_reg("ITM_TCR", 0, 1 << 2)]
+        raise ValueError(f"unsupported synchronization.DWT: {dwt}")
+    encodings = {"16M": 1, "64M": 2, "256M": 3}
+    if not isinstance(dwt, str) or dwt not in encodings:
+        raise ValueError(f"unsupported synchronization.DWT: {dwt}")
     return [
-        _reg("DWT_CTRL", encodings[period] << 10, 0xC00),
+        _reg("DWT_CTRL", encodings[dwt] << 10, 0xC00),
         _reg("ITM_TCR", (1 << 2) | 1, (1 << 2) | 1),
     ]
 

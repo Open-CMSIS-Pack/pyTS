@@ -515,7 +515,7 @@ def test_setup_trace_generates_coresight_register_settings(
                     "exceptions": None,
                     "events": [{"event": "CPICNT"}],
                     "itm": {"enable": 0xF, "privileged": 1},
-                    "synchronization": [{"period": "DWT\\16M"}],
+                    "synchronization": [{"DWT": "16M"}],
                 }
             ]
         }
@@ -810,6 +810,72 @@ def test_generate_ctrace_run_disables_pc_sampling_without_a_period(
     assert output["ctrace-run"]["ctrace-refs"][0]["regs"] == [
         {"name": "DWT_CTRL", "value": 0, "mask": 1 << 12}
     ]
+
+
+@pytest.mark.parametrize(
+    ("dwt", "encoding"),
+    [("16M", 0), ("64M", 1), ("256M", 2)],
+)
+def test_generate_ctrace_run_encodes_dwt_synchronization_literals(
+    dwt: str,
+    encoding: int,
+) -> None:
+    output = cast(
+        dict[str, Any],
+        generate_ctrace_run(
+            {"ctrace": {"setup": [{"synchronization": [{"DWT": dwt}]}]}},
+            [Processor.from_core("CM4", None)],
+        ),
+    )
+
+    assert output["ctrace-run"]["ctrace-refs"][0]["regs"] == [
+        {"name": "DWT_CTRL", "value": encoding << 10, "mask": 0xC00},
+        {"name": "ITM_TCR", "value": 5, "mask": 5},
+    ]
+
+
+def test_generate_ctrace_run_disables_dwt_synchronization_with_zero() -> None:
+    output = cast(
+        dict[str, Any],
+        generate_ctrace_run(
+            {"ctrace": {"setup": [{"synchronization": [{"DWT": 0}]}]}},
+            [Processor.from_core("CM4", None)],
+        ),
+    )
+
+    assert output["ctrace-run"]["ctrace-refs"][0]["regs"] == [
+        {"name": "ITM_TCR", "value": 0, "mask": 1 << 2}
+    ]
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {},
+        {"period": "DWT\\16M"},
+        {"DWT": 1},
+        {"DWT": 0.0},
+        {"DWT": False},
+        {"DWT": None},
+        {"DWT": "0"},
+        {"DWT": "16m"},
+        {"DWT": "32M"},
+    ],
+)
+def test_generate_ctrace_run_rejects_invalid_dwt_synchronization_literals(
+    entry: dict[str, Any],
+) -> None:
+    output = cast(
+        dict[str, Any],
+        generate_ctrace_run(
+            {"ctrace": {"setup": [{"synchronization": [entry]}]}},
+            [Processor.from_core("CM4", None)],
+        ),
+    )
+
+    ref = output["ctrace-run"]["ctrace-refs"][0]
+    assert "error" in ref
+    assert "regs" not in ref
 
 
 def _generate_data_refs(
