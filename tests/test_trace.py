@@ -586,7 +586,7 @@ def test_setup_trace_generates_coresight_register_settings(
         {"name": "ITM_TCR", "value": 1, "mask": 1},
     ]
     assert refs[5]["regs"] == [
-        {"name": "DWT_CTRL", "value": 0, "mask": 0xC00},
+        {"name": "DWT_CTRL", "value": 1 << 10, "mask": 0xC00},
         {"name": "ITM_TCR", "value": 5, "mask": 5},
     ]
     output_text = output_path.read_text(encoding="utf-8")
