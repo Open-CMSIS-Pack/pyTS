@@ -814,7 +814,7 @@ def test_generate_ctrace_run_disables_pc_sampling_without_a_period(
 
 @pytest.mark.parametrize(
     ("dwt", "encoding"),
-    [("16M", 0), ("64M", 1), ("256M", 2)],
+    [("16M", 1), ("64M", 2), ("256M", 3)],
 )
 def test_generate_ctrace_run_encodes_dwt_synchronization_literals(
     dwt: str,
