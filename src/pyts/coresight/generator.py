@@ -185,14 +185,14 @@ def generate_ctrace_run(
                 )
             )
 
-    run_root = _hexify_addresses(root)
-    run_root = cast(YamlMapping, run_root)
     generated_by = f"pyTS v{package_version()}"
-    output_root: YamlMapping = {"generated-by": generated_by}
-    output_root.update(run_root)
-    output_root["generated-by"] = generated_by
-    output_root["ctrace-refs"] = cast(JsonValue, refs)
-    return {"ctrace-run": output_root}
+    return {
+        "ctrace-run": {
+            "generated-by": generated_by,
+            "ctrace-setup": _hexify_addresses(setups),
+            "ctrace-refs": cast(JsonValue, refs),
+        }
+    }
 
 
 def _select_processors(

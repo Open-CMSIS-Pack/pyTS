@@ -535,8 +535,8 @@ def test_setup_trace_generates_coresight_register_settings(
     output_path = project / ".trace" / f"{trace_name}.ctrace-run.yml"
     output = read_yaml(output_path)
     run = output["ctrace-run"]
-    assert run["created-by"] == "CMSIS-Debugger v1.4.0"
-    assert run["setup"][0]["data"][0] == {
+    assert set(run) == {"generated-by", "ctrace-setup", "ctrace-refs"}
+    assert run["ctrace-setup"][0]["data"][0] == {
         "location": "main",
         "access": "RW",
         "symbol-file": str(
@@ -596,6 +596,45 @@ def test_setup_trace_generates_coresight_register_settings(
     assert "mask: 0x00000303" in output_text
     assert "exceptions:\n" in output_text
     assert "exceptions: null" not in output_text
+
+
+def test_generate_ctrace_run_creates_fresh_document_with_enriched_setup() -> None:
+    setup: list[Any] = [
+        {
+            "disable": True,
+            "data": [
+                {
+                    "location": "main",
+                    "symbol": "main",
+                    "address": 0x08000100,
+                    "size": 64,
+                    "type": "func",
+                }
+            ],
+        }
+    ]
+
+    output = cast(
+        dict[str, Any],
+        generate_ctrace_run(
+            {
+                "ctrace": {
+                    "created-by": "debugger",
+                    "setup": setup,
+                    "extension": {"must-not": "be copied"},
+                }
+            },
+            [Processor.from_core("CM4", None)],
+        ),
+    )
+
+    assert output == {
+        "ctrace-run": {
+            "generated-by": "pyTS v0.1.0",
+            "ctrace-setup": setup,
+            "ctrace-refs": [],
+        }
+    }
 
 
 def test_setup_trace_scopes_refs_and_reports_unsupported_core(
@@ -1738,7 +1777,7 @@ def test_generate_ctrace_run_reports_invalid_data_match(
     assert refs[0]["error"] == error
     assert "source" not in refs[0]
     assert "regs" not in refs[0]
-    assert output["ctrace-run"]["setup"][0]["data"][0]["match"] == match
+    assert output["ctrace-run"]["ctrace-setup"][0]["data"][0]["match"] == match
 
 
 def test_generate_ctrace_run_serializes_match_registers_as_hex(tmp_path: Path) -> None:
@@ -2066,7 +2105,7 @@ def test_setup_trace_accepts_anonymous_fixed_address(
 
     output_path = project / ".trace" / f"{trace_name}.ctrace-run.yml"
     output = read_yaml(output_path)
-    entry = output["ctrace-run"]["setup"][0]["data"][0]
+    entry = output["ctrace-run"]["ctrace-setup"][0]["data"][0]
     assert entry == {
         "location": 0x20001000,
         "size": 4,
