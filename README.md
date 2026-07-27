@@ -104,3 +104,20 @@ distribution. Build a source distribution and wheel with:
 .venv/bin/python -m pip install build
 .venv/bin/python -m build
 ```
+
+## Contributing
+
+Contributions are welcome. Please open an issue to discuss significant changes
+and submit fixes or enhancements as pull requests. Before submitting a change,
+run the tests and strict type checks described in
+[Install for development](#install-for-development).
+
+By submitting a contribution, you agree that it may be distributed under the
+project's Apache License 2.0.
+
+## License
+
+This project is licensed under the [Apache License 2.0](LICENSE).
+Third-party dependencies remain subject to their respective licenses; see the
+[Third-Party Intellectual Property notice](TPIP.md), generated with
+[`pip-licenses`](https://github.com/raimon49/pip-licenses).
