@@ -965,10 +965,10 @@ def test_star_cores_support_dwtv2_data_trace(
         [
             {"location": "value", "address": 0x20000000},
             {
-                "location": "address",
+                "location": "offset",
                 "address": 0x20000004,
                 "size": 1,
-                "output": "address",
+                "output": "offset",
             },
         ],
         processor,
@@ -976,7 +976,7 @@ def test_star_cores_support_dwtv2_data_trace(
 
     assert refs[0]["regs"][0] == {"name": "DWT_COMP0", "value": 0x20000000}
     assert refs[1]["error"] == (
-        f"{display} DWT-Unit data.output 'address' cannot emit an address "
+        f"{display} DWT-Unit data.output 'offset' cannot emit an offset "
         "for a one-byte range"
     )
 
@@ -987,16 +987,16 @@ def test_star_cores_support_dwtv2_data_trace(
         ("value", "R", 0xC),
         ("value", "W", 0xD),
         ("value", "RW", 0x2),
-        ("address", "R", 0x2C),
-        ("address", "W", 0x2D),
-        ("address", "RW", 0x21),
+        ("offset", "R", 0x2C),
+        ("offset", "W", 0x2D),
+        ("offset", "RW", 0x21),
         ("PC", "RW", 0x1),
         ("PC+value", "R", 0xE),
         ("PC+value", "W", 0xF),
         ("PC+value", "RW", 0x3),
-        ("address+value", "R", 0x2E),
-        ("address+value", "W", 0x2F),
-        ("address+value", "RW", 0x22),
+        ("offset+value", "R", 0x2E),
+        ("offset+value", "W", 0x2F),
+        ("offset+value", "RW", 0x22),
     ],
 )
 def test_generate_ctrace_run_supports_dwtv1_output_modes(
@@ -1030,16 +1030,16 @@ def test_generate_ctrace_run_supports_dwtv1_output_modes(
         ("value", "R", 0xC),
         ("value", "W", 0xD),
         ("value", "RW", 0x2),
-        ("address", "R", 0x2C),
-        ("address", "W", 0x2D),
-        ("address", "RW", 0x21),
+        ("offset", "R", 0x2C),
+        ("offset", "W", 0x2D),
+        ("offset", "RW", 0x21),
         ("PC", "RW", 0x1),
         ("PC+value", "R", 0xE),
         ("PC+value", "W", 0xF),
         ("PC+value", "RW", 0x3),
-        ("address+value", "R", 0x2E),
-        ("address+value", "W", 0x2F),
-        ("address+value", "RW", 0x22),
+        ("offset+value", "R", 0x2E),
+        ("offset+value", "W", 0x2F),
+        ("offset+value", "RW", 0x22),
     ],
 )
 def test_generate_ctrace_run_supports_dwtv1_linked_match_outputs(
@@ -1151,12 +1151,12 @@ def test_generate_ctrace_run_supports_dwtv2_single_comparator_outputs(
     ("output_mode", "lower_function", "limit_function"),
     [
         ("value", 0x2C, 0x07),
-        ("address", 0x04, 0x37),
+        ("offset", 0x04, 0x37),
         ("PC", 0x34, 0x07),
         ("match", 0x24, 0x07),
         ("PC+value", 0x3C, 0x07),
-        ("address+value", 0x2C, 0x37),
-        ("PC+address", 0x34, 0x37),
+        ("offset+value", 0x2C, 0x37),
+        ("PC+offset", 0x34, 0x37),
     ],
 )
 def test_generate_ctrace_run_supports_dwtv2_range_outputs(
@@ -1230,12 +1230,12 @@ def test_generate_ctrace_run_supports_dwtv2_linked_value_match(
     ("output_mode", "address_function"),
     [
         ("value", 0x82D),
-        ("address", 0x805),
+        ("offset", 0x805),
         ("PC", 0x835),
         ("match", 0x825),
         ("PC+value", 0x83D),
-        ("address+value", 0x82D),
-        ("PC+address", 0x835),
+        ("offset+value", 0x82D),
+        ("PC+offset", 0x835),
     ],
 )
 def test_generate_ctrace_run_applies_output_to_linked_address_comparator(
@@ -1305,7 +1305,7 @@ def test_generate_ctrace_run_allocates_mixed_data_comparators() -> None:
                 "location": "range",
                 "address": 0x20000020,
                 "size": 8,
-                "output": "address",
+                "output": "offset",
             },
             {"location": "last", "address": 0x20000030, "size": 4, "output": "PC"},
         ],
@@ -1563,7 +1563,7 @@ def test_direct_dwtv1_match_requires_pair_before_plain_allocation() -> None:
         ({"output": "PC", "access": "R"}, "does not support access R"),
         ({"output": "PC", "access": "W"}, "does not support access W"),
         ({"output": "match"}, "does not support data.output 'match'"),
-        ({"output": "PC+address"}, "does not support data.output 'PC+address'"),
+        ({"output": "PC+offset"}, "does not support data.output 'PC+offset'"),
     ],
 )
 def test_generate_ctrace_run_rejects_unsupported_dwtv1_outputs(
@@ -1615,7 +1615,7 @@ def test_dwtv1_error_names_the_processor_class() -> None:
 @pytest.mark.parametrize(
     ("entry", "error"),
     [
-        ({"output": "address", "size": 1}, "cannot emit an address"),
+        ({"output": "offset", "size": 1}, "cannot emit an offset"),
         (
             {"output": "match", "size": 4, "match": {"value": 1, "size": 2}},
             "data.size must equal data.match.size",
@@ -1653,14 +1653,14 @@ def test_dwtv2_error_names_the_processor_class() -> None:
                 "location": "counter",
                 "address": 0x20000000,
                 "size": 1,
-                "output": "address",
+                "output": "offset",
             }
         ],
         Processor(core="CM33", pname=None, dwt_version=2),
     )
 
     assert refs[0]["error"] == (
-        "Cortex-M33 DWT-Unit data.output 'address' cannot emit an address "
+        "Cortex-M33 DWT-Unit data.output 'offset' cannot emit an offset "
         "for a one-byte range"
     )
 
@@ -1739,13 +1739,13 @@ def test_invalid_coresight_request_does_not_consume_comparators() -> None:
     )
     assert coresight is not None
 
-    with pytest.raises(ValueError, match="cannot emit an address"):
+    with pytest.raises(ValueError, match="cannot emit an offset"):
         coresight.encode_data(
             DataTraceRequest(
                 address=0x20000000,
                 size=1,
                 access=DataAccess.WRITE,
-                output=DataOutput.ADDRESS,
+                output=DataOutput.OFFSET,
             )
         )
 

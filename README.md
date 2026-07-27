@@ -80,17 +80,17 @@ document; pyTS resolves both styles in document order using the same ELF cache.
 PC sampling periods use integer CPU-cycle counts: `0` disables sampling, while
 supported enabled periods are powers of two from `64` through `16384`.
 
-Data trace supports the CMSIS output modes `value`, `address`, `PC`, `match`,
-`PC+value`, `address+value`, and `PC+address`. DWTv1 supports `value`,
-`address`, `PC+value`, and `address+value` for all access types, plus `PC` for
-`RW`; it cannot produce `match` or `PC+address`. One DWTv1 `match:` condition
+Data trace supports the CMSIS output modes `value`, `offset`, `PC`, `match`,
+`PC+value`, `offset+value`, and `PC+offset`. DWTv1 supports `value`,
+`offset`, `PC+value`, and `offset+value` for all access types, plus `PC` for
+`RW`; it cannot produce `match` or `PC+offset`. One DWTv1 `match:` condition
 per processor can use the portable comparator 0/1 address-value pair with any
 otherwise supported output. Its address range size and matched data width are
 encoded independently. DWTv2 Main Extension processors support all output
 modes. Cortex-M23 cannot generate the required data trace packets.
 
-DWTv2 address output and arbitrary or unaligned ranges consume consecutive
-lower/limit comparator pairs. A one-byte range cannot emit an address packet.
+DWTv2 offset output and arbitrary or unaligned ranges consume consecutive
+lower/limit comparator pairs. A one-byte range cannot emit an offset packet.
 A DWTv2 `match:` condition consumes an address/linked-value pair. The requested
 `output` applies to the address comparator (default `value`), while the linked
 value comparator implicitly uses `match` output. Data and match sizes must be

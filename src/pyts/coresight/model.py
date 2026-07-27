@@ -111,12 +111,12 @@ class DataOutput(str, Enum):
     """Packet content requested for one data trace entry."""
 
     VALUE = "value"
-    ADDRESS = "address"
+    OFFSET = "offset"
     PC = "PC"
     MATCH = "match"
     PC_VALUE = "PC+value"
-    ADDRESS_VALUE = "address+value"
-    PC_ADDRESS = "PC+address"
+    OFFSET_VALUE = "offset+value"
+    PC_OFFSET = "PC+offset"
 
 
 @dataclass(frozen=True)

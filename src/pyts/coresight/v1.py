@@ -150,7 +150,7 @@ _FUNCTIONS: dict[DataOutput, dict[DataAccess, int]] = {
         DataAccess.WRITE: 0xD,
         DataAccess.READ_WRITE: 0x2,
     },
-    DataOutput.ADDRESS: {
+    DataOutput.OFFSET: {
         DataAccess.READ: 0x2C,
         DataAccess.WRITE: 0x2D,
         DataAccess.READ_WRITE: 0x21,
@@ -161,7 +161,7 @@ _FUNCTIONS: dict[DataOutput, dict[DataAccess, int]] = {
         DataAccess.WRITE: 0xF,
         DataAccess.READ_WRITE: 0x3,
     },
-    DataOutput.ADDRESS_VALUE: {
+    DataOutput.OFFSET_VALUE: {
         DataAccess.READ: 0x2E,
         DataAccess.WRITE: 0x2F,
         DataAccess.READ_WRITE: 0x22,
