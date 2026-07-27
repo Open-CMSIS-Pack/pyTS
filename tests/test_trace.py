@@ -770,10 +770,23 @@ def test_generate_ctrace_run_uses_dwtv2_comparator_model() -> None:
     ]
 
 
-@pytest.mark.parametrize("cyctap", [64, 1024])
-@pytest.mark.parametrize("postpreset", range(1, 17))
-def test_generate_ctrace_run_encodes_pc_sampling_period_literals(
-    cyctap: int,
+@pytest.mark.parametrize(
+    ("period", "cyctap_bit", "postpreset"),
+    [
+        (64, 0, 0),
+        (128, 0, 1),
+        (256, 0, 3),
+        (512, 0, 7),
+        (1024, 1, 0),
+        (2048, 1, 1),
+        (4096, 1, 3),
+        (8192, 1, 7),
+        (16384, 1, 15),
+    ],
+)
+def test_generate_ctrace_run_encodes_pc_sampling_integer_periods(
+    period: int,
+    cyctap_bit: int,
     postpreset: int,
 ) -> None:
     output = cast(
@@ -781,20 +794,17 @@ def test_generate_ctrace_run_encodes_pc_sampling_period_literals(
         generate_ctrace_run(
             {
                 "ctrace": {
-                    "setup": [
-                        {"pcsampling": {"period": f"{cyctap}*{postpreset}"}}
-                    ]
+                    "setup": [{"pcsampling": {"period": period}}]
                 }
             },
             [Processor.from_core("CM4", None)],
         ),
     )
 
-    cyctap_bit = 0 if cyctap == 64 else 1
     expected_ctrl = (
         (1 << 12)
         | (cyctap_bit << 9)
-        | ((postpreset - 1) << 1)
+        | (postpreset << 1)
         | 1
     )
     assert output["ctrace-run"]["ctrace-refs"][0]["regs"] == [
@@ -806,10 +816,16 @@ def test_generate_ctrace_run_encodes_pc_sampling_period_literals(
 @pytest.mark.parametrize(
     "period",
     [
-        0,
-        64,
+        -64,
+        1,
+        63,
+        65,
+        192,
+        32768,
         True,
         None,
+        "64*1",
+        "1024*16",
         "64*0",
         "64*17",
         "1024*0",
@@ -834,8 +850,8 @@ def test_generate_ctrace_run_rejects_invalid_pc_sampling_period_literals(
     assert "regs" not in ref
 
 
-@pytest.mark.parametrize("pcsampling", [None, {}])
-def test_generate_ctrace_run_disables_pc_sampling_without_a_period(
+@pytest.mark.parametrize("pcsampling", [None, {}, {"period": 0}])
+def test_generate_ctrace_run_disables_pc_sampling_by_default_or_zero(
     pcsampling: Any,
 ) -> None:
     output = cast(

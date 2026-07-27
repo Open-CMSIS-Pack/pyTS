@@ -74,10 +74,16 @@ _EVENT_BITS = {
     "FOLDCNT": 21,
 }
 
-_PC_SAMPLING_PERIODS: dict[str, tuple[int, int]] = {
-    f"{cyctap}*{postpreset}": (cyctap_bit, postpreset - 1)
-    for cyctap, cyctap_bit in ((64, 0), (1024, 1))
-    for postpreset in range(1, 17)
+_PC_SAMPLING_PERIODS: dict[int, tuple[int, int]] = {
+    64: (0, 0),
+    128: (0, 1),
+    256: (0, 3),
+    512: (0, 7),
+    1024: (1, 0),
+    2048: (1, 1),
+    4096: (1, 3),
+    8192: (1, 7),
+    16384: (1, 15),
 }
 
 
@@ -414,8 +420,10 @@ def _pc_sampling_regs(value: JsonValue) -> list[YamlMapping]:
     if value is None or "period" not in value:
         return [_reg("DWT_CTRL", 0, 1 << 12)]
     period = value["period"]
-    if not isinstance(period, str):
-        raise ValueError("pcsampling.period must be a CYCTAP*POSTPRESET literal")
+    if not isinstance(period, int) or isinstance(period, bool):
+        raise ValueError("pcsampling.period must be an integer")
+    if period == 0:
+        return [_reg("DWT_CTRL", 0, 1 << 12)]
     encoding = _PC_SAMPLING_PERIODS.get(period)
     if encoding is None:
         raise ValueError(f"unsupported pcsampling.period: {period}")

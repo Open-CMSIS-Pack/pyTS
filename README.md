@@ -77,6 +77,8 @@ masks are written as 32-bit hexadecimal YAML integers. The generated
 `ctrace-refs`; other source `ctrace` properties are not copied.
 Location-style and legacy `symbol`/`address` entries may coexist in one trace
 document; pyTS resolves both styles in document order using the same ELF cache.
+PC sampling periods use integer CPU-cycle counts: `0` disables sampling, while
+supported enabled periods are powers of two from `64` through `16384`.
 
 Data trace supports the CMSIS output modes `value`, `address`, `PC`, `match`,
 `PC+value`, `address+value`, and `PC+address`. DWTv1 supports `value`,
