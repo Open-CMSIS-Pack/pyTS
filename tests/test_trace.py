@@ -563,7 +563,7 @@ def test_setup_trace_generates_coresight_register_settings(
     assert refs[1]["symbol-address"] == 0x08000100
     assert refs[1]["regs"] == [
         {"name": "DWT_COMP0", "value": 0x08000100},
-        {"name": "DWT_MASK0", "value": 6},
+        {"name": "DWT_MASK0", "value": 2},
         {"name": "DWT_FUNCTION0", "value": 2},
         {"name": "ITM_TCR", "value": 9, "mask": 9},
     ]
@@ -586,7 +586,7 @@ def test_setup_trace_generates_coresight_register_settings(
         {"name": "ITM_TCR", "value": 1, "mask": 1},
     ]
     assert refs[5]["regs"] == [
-        {"name": "DWT_CTRL", "value": 0, "mask": 0xC00},
+        {"name": "DWT_CTRL", "value": 1 << 10, "mask": 0xC00},
         {"name": "ITM_TCR", "value": 5, "mask": 5},
     ]
     output_text = output_path.read_text(encoding="utf-8")
@@ -869,7 +869,7 @@ def test_generate_ctrace_run_disables_pc_sampling_by_default_or_zero(
 
 @pytest.mark.parametrize(
     ("dwt", "encoding"),
-    [("16M", 0), ("64M", 1), ("256M", 2)],
+    [("16M", 1), ("64M", 2), ("256M", 3)],
 )
 def test_generate_ctrace_run_encodes_dwt_synchronization_literals(
     dwt: str,
