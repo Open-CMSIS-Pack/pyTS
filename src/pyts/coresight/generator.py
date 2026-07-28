@@ -404,8 +404,9 @@ def _assign_atbids(
             )
 
     next_atbid = 1
+    streamed_processors = {item.processor for item in streamed}
     for processor in processors:
-        if processor not in {item.processor for item in streamed}:
+        if processor not in streamed_processors:
             continue
         if processor in processor_ids:
             continue
