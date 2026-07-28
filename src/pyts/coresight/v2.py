@@ -53,7 +53,7 @@ class DwtV2Encoder:
         if use_range and request.size == 1:
             raise ValueError(
                 f"{processor_class(self.core)} DWT-Unit data.output "
-                f"{request.output.value!r} cannot emit an address for a one-byte range"
+                f"{request.output.value!r} cannot emit an offset for a one-byte range"
             )
         return (2 if use_range else 1), uses_value
 
@@ -90,7 +90,7 @@ class DwtV2Encoder:
         """Return whether a range and data-value matching are required."""
 
         use_range = (
-            request.output in _ADDRESS_OUTPUTS
+            request.output in _OFFSET_OUTPUTS
             or request.size not in _DATA_SIZE
             or request.address % request.size != 0
         )
@@ -139,7 +139,7 @@ class DwtV2Encoder:
             lower, limit = indices
             limit_action = (
                 0x30
-                if request.output in _ADDRESS_OUTPUTS
+                if request.output in _OFFSET_OUTPUTS
                 else 0
             )
             return [
@@ -184,20 +184,20 @@ _DATA_SIZE = {1: 0, 2: 1 << 10, 4: 2 << 10}
 
 _OUTPUT_ACTION = {
     DataOutput.VALUE: 0x20,
-    DataOutput.ADDRESS: 0x00,
+    DataOutput.OFFSET: 0x00,
     DataOutput.PC: 0x30,
     DataOutput.MATCH: 0x20,
     DataOutput.PC_VALUE: 0x30,
-    DataOutput.ADDRESS_VALUE: 0x20,
-    DataOutput.PC_ADDRESS: 0x30,
+    DataOutput.OFFSET_VALUE: 0x20,
+    DataOutput.PC_OFFSET: 0x30,
 }
 
 _VALUE_OUTPUTS = frozenset(
-    {DataOutput.VALUE, DataOutput.PC_VALUE, DataOutput.ADDRESS_VALUE}
+    {DataOutput.VALUE, DataOutput.PC_VALUE, DataOutput.OFFSET_VALUE}
 )
 
-_ADDRESS_OUTPUTS = frozenset(
-    {DataOutput.ADDRESS, DataOutput.ADDRESS_VALUE, DataOutput.PC_ADDRESS}
+_OFFSET_OUTPUTS = frozenset(
+    {DataOutput.OFFSET, DataOutput.OFFSET_VALUE, DataOutput.PC_OFFSET}
 )
 
 

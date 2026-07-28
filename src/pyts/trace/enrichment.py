@@ -100,17 +100,18 @@ def enrich_legacy_refs(
         enrich_property(
             item,
             description,
-            "size",
+            "symbol-size",
             symbol.size,
-            size_is_consistent(item.get("size"), symbol),
+            size_is_consistent(item.get("symbol-size"), symbol),
         )
-        enrich_property(
-            item,
-            description,
-            "type",
-            symbol.type,
-            type_is_consistent(item.get("type"), symbol),
-        )
+        if symbol.type:
+            enrich_property(
+                item,
+                description,
+                "symbol-type",
+                symbol.type,
+                type_is_consistent(item.get("symbol-type"), symbol),
+            )
 
 
 def enrich_location_refs(
@@ -148,13 +149,20 @@ def enrich_location_refs(
                 location_address_is_consistent(item.get("address"), symbol),
             ),
             (
-                "size",
+                "symbol-size",
                 symbol.size,
-                location_size_is_consistent(item.get("size"), symbol),
+                location_size_is_consistent(item.get("symbol-size"), symbol),
             ),
-            ("type", symbol.type, item.get("type") == symbol.type),
         ):
             enrich_property(item, description, name, value, consistent)
+        if symbol.type:
+            enrich_property(
+                item,
+                description,
+                "symbol-type",
+                symbol.type,
+                item.get("symbol-type") == symbol.type,
+            )
 
 
 def normalize_fixed_address(item: YamlMapping, address: int) -> None:

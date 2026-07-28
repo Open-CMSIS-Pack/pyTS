@@ -535,8 +535,8 @@ def test_setup_trace_generates_coresight_register_settings(
     output_path = project / ".trace" / f"{trace_name}.ctrace-run.yml"
     output = read_yaml(output_path)
     run = output["ctrace-run"]
-    assert run["created-by"] == "CMSIS-Debugger v1.4.0"
-    assert run["setup"][0]["data"][0] == {
+    assert set(run) == {"generated-by", "ctrace-setup", "ctrace-refs"}
+    assert run["ctrace-setup"][0]["data"][0] == {
         "location": "main",
         "access": "RW",
         "symbol-file": str(
@@ -596,6 +596,45 @@ def test_setup_trace_generates_coresight_register_settings(
     assert "mask: 0x00000303" in output_text
     assert "exceptions:\n" in output_text
     assert "exceptions: null" not in output_text
+
+
+def test_generate_ctrace_run_creates_fresh_document_with_enriched_setup() -> None:
+    setup: list[Any] = [
+        {
+            "disable": True,
+            "data": [
+                {
+                    "location": "main",
+                    "symbol": "main",
+                    "address": 0x08000100,
+                    "size": 64,
+                    "type": "func",
+                }
+            ],
+        }
+    ]
+
+    output = cast(
+        dict[str, Any],
+        generate_ctrace_run(
+            {
+                "ctrace": {
+                    "created-by": "debugger",
+                    "setup": setup,
+                    "extension": {"must-not": "be copied"},
+                }
+            },
+            [Processor.from_core("CM4", None)],
+        ),
+    )
+
+    assert output == {
+        "ctrace-run": {
+            "generated-by": "pyTS v0.1.0",
+            "ctrace-setup": setup,
+            "ctrace-refs": [],
+        }
+    }
 
 
 def test_setup_trace_scopes_refs_and_reports_unsupported_core(
@@ -731,10 +770,23 @@ def test_generate_ctrace_run_uses_dwtv2_comparator_model() -> None:
     ]
 
 
-@pytest.mark.parametrize("cyctap", [64, 1024])
-@pytest.mark.parametrize("postpreset", range(1, 17))
-def test_generate_ctrace_run_encodes_pc_sampling_period_literals(
-    cyctap: int,
+@pytest.mark.parametrize(
+    ("period", "cyctap_bit", "postpreset"),
+    [
+        (64, 0, 0),
+        (128, 0, 1),
+        (256, 0, 3),
+        (512, 0, 7),
+        (1024, 1, 0),
+        (2048, 1, 1),
+        (4096, 1, 3),
+        (8192, 1, 7),
+        (16384, 1, 15),
+    ],
+)
+def test_generate_ctrace_run_encodes_pc_sampling_integer_periods(
+    period: int,
+    cyctap_bit: int,
     postpreset: int,
 ) -> None:
     output = cast(
@@ -742,20 +794,17 @@ def test_generate_ctrace_run_encodes_pc_sampling_period_literals(
         generate_ctrace_run(
             {
                 "ctrace": {
-                    "setup": [
-                        {"pcsampling": {"period": f"{cyctap}*{postpreset}"}}
-                    ]
+                    "setup": [{"pcsampling": {"period": period}}]
                 }
             },
             [Processor.from_core("CM4", None)],
         ),
     )
 
-    cyctap_bit = 0 if cyctap == 64 else 1
     expected_ctrl = (
         (1 << 12)
         | (cyctap_bit << 9)
-        | ((postpreset - 1) << 1)
+        | (postpreset << 1)
         | 1
     )
     assert output["ctrace-run"]["ctrace-refs"][0]["regs"] == [
@@ -767,10 +816,16 @@ def test_generate_ctrace_run_encodes_pc_sampling_period_literals(
 @pytest.mark.parametrize(
     "period",
     [
-        0,
-        64,
+        -64,
+        1,
+        63,
+        65,
+        192,
+        32768,
         True,
         None,
+        "64*1",
+        "1024*16",
         "64*0",
         "64*17",
         "1024*0",
@@ -795,8 +850,8 @@ def test_generate_ctrace_run_rejects_invalid_pc_sampling_period_literals(
     assert "regs" not in ref
 
 
-@pytest.mark.parametrize("pcsampling", [None, {}])
-def test_generate_ctrace_run_disables_pc_sampling_without_a_period(
+@pytest.mark.parametrize("pcsampling", [None, {}, {"period": 0}])
+def test_generate_ctrace_run_disables_pc_sampling_by_default_or_zero(
     pcsampling: Any,
 ) -> None:
     output = cast(
@@ -910,10 +965,10 @@ def test_star_cores_support_dwtv2_data_trace(
         [
             {"location": "value", "address": 0x20000000},
             {
-                "location": "address",
+                "location": "offset",
                 "address": 0x20000004,
                 "size": 1,
-                "output": "address",
+                "output": "offset",
             },
         ],
         processor,
@@ -921,7 +976,7 @@ def test_star_cores_support_dwtv2_data_trace(
 
     assert refs[0]["regs"][0] == {"name": "DWT_COMP0", "value": 0x20000000}
     assert refs[1]["error"] == (
-        f"{display} DWT-Unit data.output 'address' cannot emit an address "
+        f"{display} DWT-Unit data.output 'offset' cannot emit an offset "
         "for a one-byte range"
     )
 
@@ -932,16 +987,16 @@ def test_star_cores_support_dwtv2_data_trace(
         ("value", "R", 0xC),
         ("value", "W", 0xD),
         ("value", "RW", 0x2),
-        ("address", "R", 0x2C),
-        ("address", "W", 0x2D),
-        ("address", "RW", 0x21),
+        ("offset", "R", 0x2C),
+        ("offset", "W", 0x2D),
+        ("offset", "RW", 0x21),
         ("PC", "RW", 0x1),
         ("PC+value", "R", 0xE),
         ("PC+value", "W", 0xF),
         ("PC+value", "RW", 0x3),
-        ("address+value", "R", 0x2E),
-        ("address+value", "W", 0x2F),
-        ("address+value", "RW", 0x22),
+        ("offset+value", "R", 0x2E),
+        ("offset+value", "W", 0x2F),
+        ("offset+value", "RW", 0x22),
     ],
 )
 def test_generate_ctrace_run_supports_dwtv1_output_modes(
@@ -975,16 +1030,16 @@ def test_generate_ctrace_run_supports_dwtv1_output_modes(
         ("value", "R", 0xC),
         ("value", "W", 0xD),
         ("value", "RW", 0x2),
-        ("address", "R", 0x2C),
-        ("address", "W", 0x2D),
-        ("address", "RW", 0x21),
+        ("offset", "R", 0x2C),
+        ("offset", "W", 0x2D),
+        ("offset", "RW", 0x21),
         ("PC", "RW", 0x1),
         ("PC+value", "R", 0xE),
         ("PC+value", "W", 0xF),
         ("PC+value", "RW", 0x3),
-        ("address+value", "R", 0x2E),
-        ("address+value", "W", 0x2F),
-        ("address+value", "RW", 0x22),
+        ("offset+value", "R", 0x2E),
+        ("offset+value", "W", 0x2F),
+        ("offset+value", "RW", 0x22),
     ],
 )
 def test_generate_ctrace_run_supports_dwtv1_linked_match_outputs(
@@ -1096,12 +1151,12 @@ def test_generate_ctrace_run_supports_dwtv2_single_comparator_outputs(
     ("output_mode", "lower_function", "limit_function"),
     [
         ("value", 0x2C, 0x07),
-        ("address", 0x04, 0x37),
+        ("offset", 0x04, 0x37),
         ("PC", 0x34, 0x07),
         ("match", 0x24, 0x07),
         ("PC+value", 0x3C, 0x07),
-        ("address+value", 0x2C, 0x37),
-        ("PC+address", 0x34, 0x37),
+        ("offset+value", 0x2C, 0x37),
+        ("PC+offset", 0x34, 0x37),
     ],
 )
 def test_generate_ctrace_run_supports_dwtv2_range_outputs(
@@ -1175,12 +1230,12 @@ def test_generate_ctrace_run_supports_dwtv2_linked_value_match(
     ("output_mode", "address_function"),
     [
         ("value", 0x82D),
-        ("address", 0x805),
+        ("offset", 0x805),
         ("PC", 0x835),
         ("match", 0x825),
         ("PC+value", 0x83D),
-        ("address+value", 0x82D),
-        ("PC+address", 0x835),
+        ("offset+value", 0x82D),
+        ("PC+offset", 0x835),
     ],
 )
 def test_generate_ctrace_run_applies_output_to_linked_address_comparator(
@@ -1250,7 +1305,7 @@ def test_generate_ctrace_run_allocates_mixed_data_comparators() -> None:
                 "location": "range",
                 "address": 0x20000020,
                 "size": 8,
-                "output": "address",
+                "output": "offset",
             },
             {"location": "last", "address": 0x20000030, "size": 4, "output": "PC"},
         ],
@@ -1508,7 +1563,7 @@ def test_direct_dwtv1_match_requires_pair_before_plain_allocation() -> None:
         ({"output": "PC", "access": "R"}, "does not support access R"),
         ({"output": "PC", "access": "W"}, "does not support access W"),
         ({"output": "match"}, "does not support data.output 'match'"),
-        ({"output": "PC+address"}, "does not support data.output 'PC+address'"),
+        ({"output": "PC+offset"}, "does not support data.output 'PC+offset'"),
     ],
 )
 def test_generate_ctrace_run_rejects_unsupported_dwtv1_outputs(
@@ -1560,7 +1615,7 @@ def test_dwtv1_error_names_the_processor_class() -> None:
 @pytest.mark.parametrize(
     ("entry", "error"),
     [
-        ({"output": "address", "size": 1}, "cannot emit an address"),
+        ({"output": "offset", "size": 1}, "cannot emit an offset"),
         (
             {"output": "match", "size": 4, "match": {"value": 1, "size": 2}},
             "data.size must equal data.match.size",
@@ -1598,14 +1653,14 @@ def test_dwtv2_error_names_the_processor_class() -> None:
                 "location": "counter",
                 "address": 0x20000000,
                 "size": 1,
-                "output": "address",
+                "output": "offset",
             }
         ],
         Processor(core="CM33", pname=None, dwt_version=2),
     )
 
     assert refs[0]["error"] == (
-        "Cortex-M33 DWT-Unit data.output 'address' cannot emit an address "
+        "Cortex-M33 DWT-Unit data.output 'offset' cannot emit an offset "
         "for a one-byte range"
     )
 
@@ -1684,13 +1739,13 @@ def test_invalid_coresight_request_does_not_consume_comparators() -> None:
     )
     assert coresight is not None
 
-    with pytest.raises(ValueError, match="cannot emit an address"):
+    with pytest.raises(ValueError, match="cannot emit an offset"):
         coresight.encode_data(
             DataTraceRequest(
                 address=0x20000000,
                 size=1,
                 access=DataAccess.WRITE,
-                output=DataOutput.ADDRESS,
+                output=DataOutput.OFFSET,
             )
         )
 
@@ -1738,7 +1793,7 @@ def test_generate_ctrace_run_reports_invalid_data_match(
     assert refs[0]["error"] == error
     assert "source" not in refs[0]
     assert "regs" not in refs[0]
-    assert output["ctrace-run"]["setup"][0]["data"][0]["match"] == match
+    assert output["ctrace-run"]["ctrace-setup"][0]["data"][0]["match"] == match
 
 
 def test_generate_ctrace_run_serializes_match_registers_as_hex(tmp_path: Path) -> None:
@@ -2066,7 +2121,7 @@ def test_setup_trace_accepts_anonymous_fixed_address(
 
     output_path = project / ".trace" / f"{trace_name}.ctrace-run.yml"
     output = read_yaml(output_path)
-    entry = output["ctrace-run"]["setup"][0]["data"][0]
+    entry = output["ctrace-run"]["ctrace-setup"][0]["data"][0]
     assert entry == {
         "location": 0x20001000,
         "size": 4,
