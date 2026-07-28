@@ -65,9 +65,21 @@ def _represent_none(dumper: yaml.SafeDumper, _value: None) -> yaml.Node:
     )
 
 
+def _represent_list(dumper: yaml.SafeDumper, value: list[Any]) -> yaml.Node:
+    """Represent numeric lists inline while keeping other lists block-style."""
+
+    node = yaml.SafeDumper.represent_list(dumper, value)
+    if value and all(
+        isinstance(item, int) and not isinstance(item, bool) for item in value
+    ):
+        node.flow_style = True
+    return node
+
+
 _PyTSSafeLoader.add_constructor("tag:yaml.org,2002:int", _construct_int)
 _PyTSSafeDumper.add_representer(HexInt, _represent_hex_int)
 _PyTSSafeDumper.add_representer(type(None), _represent_none)
+_PyTSSafeDumper.add_representer(list, _represent_list)
 
 
 def read_yaml(path: str | Path) -> Any:

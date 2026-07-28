@@ -559,7 +559,7 @@ def test_setup_trace_generates_coresight_register_settings(
     }
     assert refs[1]["ctrace-ref"] == "data#0"
     assert refs[1]["type"] == "dwt"
-    assert "source" not in refs[1]
+    assert refs[1]["source"] == 0
     assert refs[1]["symbol-address"] == 0x08000100
     assert refs[1]["regs"] == [
         {"name": "DWT_COMP0", "value": 0x08000100},
@@ -768,6 +768,7 @@ def test_generate_ctrace_run_uses_dwtv2_comparator_model() -> None:
         {"name": "DWT_FUNCTION0", "value": 0x82D},
         {"name": "ITM_TCR", "value": 9, "mask": 9},
     ]
+    assert output["ctrace-run"]["ctrace-refs"][0]["source"] == 0
 
 
 @pytest.mark.parametrize(
@@ -1021,7 +1022,7 @@ def test_generate_ctrace_run_supports_dwtv1_output_modes(
         "name": "DWT_FUNCTION0",
         "value": expected_function,
     }
-    assert "source" not in refs[0]
+    assert refs[0]["source"] == 0
 
 
 @pytest.mark.parametrize(
@@ -1139,7 +1140,7 @@ def test_generate_ctrace_run_supports_dwtv2_single_comparator_outputs(
         Processor(core="CM33", pname=None, dwt_version=2),
     )
 
-    assert "source" not in refs[0]
+    assert refs[0]["source"] == 0
     assert refs[0]["regs"] == [
         {"name": "DWT_COMP0", "value": 0x20000000},
         {"name": "DWT_FUNCTION0", "value": expected_function},
@@ -1223,7 +1224,7 @@ def test_generate_ctrace_run_supports_dwtv2_linked_value_match(
         {"name": "DWT_FUNCTION1", "value": value_function},
         {"name": "ITM_TCR", "value": 9, "mask": 9},
     ]
-    assert "source" not in refs[0]
+    assert refs[0]["source"] == [0, 1]
 
 
 @pytest.mark.parametrize(
@@ -1318,7 +1319,7 @@ def test_generate_ctrace_run_allocates_mixed_data_comparators() -> None:
         "DWT_COMP3",
     ]
     assert refs[1]["regs"][2]["name"] == "DWT_COMP2"
-    assert all("source" not in ref for ref in refs)
+    assert [ref["source"] for ref in refs] == [0, [1, 2], 3]
 
 
 def test_generate_ctrace_run_allocates_comparators_per_processor() -> None:
@@ -1368,7 +1369,7 @@ def test_generate_ctrace_run_allocates_comparators_per_processor() -> None:
 
     assert [ref["regs"][0]["name"] for ref in refs] == ["DWT_COMP0", "DWT_COMP0"]
     assert [ref["regs"][2]["name"] for ref in refs] == ["DWT_COMP1", "DWT_COMP1"]
-    assert all("source" not in ref for ref in refs)
+    assert [ref["source"] for ref in refs] == [[0, 1], [0, 1]]
     assert [ref["pname"] for ref in refs] == ["application", "network"]
 
 
