@@ -111,6 +111,15 @@ distribution. Build a source distribution and wheel with:
 .venv/bin/python -m build
 ```
 
+## pyInstaller Builds
+
+```sh
+.venv/bin/python -m pip install pyinstaller
+pyinstaller --clean --noconfirm --onefile --name pyTS src/pyts/__main__.py
+```
+
+No need at this point to commit the generated `./pyTS.spec` to the repository.
+
 ## Contributing
 
 Contributions are welcome. Please open an issue to discuss significant changes
