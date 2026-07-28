@@ -69,7 +69,7 @@ def resolve_die_address(dwarf_info: Any, cu: Any, die: Any) -> int | None:
 
     low_pc = die.attributes.get("DW_AT_low_pc")
     if low_pc is not None:
-        return int(low_pc.value)
+        return normalize_die_address(die, int(low_pc.value))
     location = die.attributes.get("DW_AT_location")
     if location is None:
         return None
@@ -81,13 +81,25 @@ def resolve_die_address(dwarf_info: Any, cu: Any, die: Any) -> int | None:
         return None
     operation = operations[0]
     if operation.op_name == "DW_OP_addr":
-        return int(operation.args[0])
+        return normalize_die_address(die, int(operation.args[0]))
     if operation.op_name == "DW_OP_addrx":
         try:
-            return int(dwarf_info.get_addr(cu, operation.args[0]))
+            address = int(dwarf_info.get_addr(cu, operation.args[0]))
         except Exception:
             return None
+        return normalize_die_address(die, address)
     return None
+
+
+def normalize_die_address(die: Any, address: int) -> int:
+    """Return a half-word-aligned address for a Thumb code DIE.
+
+    ARM Thumb DWARF addresses can include the instruction-set state in bit 0,
+    while the code memory address consumed by pyTS must be half-word aligned.
+    Data-object addresses are returned unchanged.
+    """
+
+    return address & ~1 if die.tag == "DW_TAG_subprogram" else address
 
 
 def resolve_member_path(

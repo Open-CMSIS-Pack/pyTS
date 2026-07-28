@@ -18,7 +18,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import SupportsInt, cast
 
 from elftools.elf.sections import SymbolTableSection
@@ -114,13 +114,17 @@ def defined_symbols(
             section = section_name(elf_file, entry_value(symbol, "st_shndx"))
             if section is None and not include_undefined:
                 continue
-            address = int_entry(symbol, "st_value")
+            symbol_type = enum_value(mapping_entry(symbol, "st_info").get("type"))
+            address = normalize_symbol_address(
+                int_entry(symbol, "st_value"),
+                symbol_type,
+            )
             results.append(
                 SymbolInfo(
                     name=name,
                     address=address,
                     size=int_entry(symbol, "st_size"),
-                    type=enum_value(mapping_entry(symbol, "st_info").get("type")),
+                    type=symbol_type,
                     binding=enum_value(mapping_entry(symbol, "st_info").get("bind")),
                     visibility=enum_value(
                         mapping_entry(symbol, "st_other").get("visibility")
@@ -161,11 +165,11 @@ def int_entry(symbol: object, key: str) -> int:
     return int(cast(SupportsInt, value))
 
 
-def mapping_entry(symbol: object, key: str) -> dict[str, object]:
+def mapping_entry(symbol: object, key: str) -> Mapping[str, object]:
     """Read a mapping-valued symbol entry field."""
 
     value = entry_value(symbol, key, {})
-    return cast(dict[str, object], value) if isinstance(value, dict) else {}
+    return cast(Mapping[str, object], value) if isinstance(value, Mapping) else {}
 
 
 def section_name(elf_file: ELFLike, section_index: object) -> str | None:
@@ -191,3 +195,9 @@ def enum_value(value: object) -> str:
     for prefix in ("STT_", "STB_", "STV_"):
         text = text.removeprefix(prefix)
     return text.lower()
+
+
+def normalize_symbol_address(address: int, symbol_type: str) -> int:
+    """Return a half-word-aligned address for an ARM code symbol."""
+
+    return address & ~1 if symbol_type in {"func", "gnu_ifunc"} else address
