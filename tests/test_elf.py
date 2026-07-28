@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+from collections import UserDict
 from pathlib import Path
 import shutil
 import subprocess
@@ -30,6 +31,7 @@ from pyts.elf import (
     SymbolInfo,
     missing_symbols,
 )
+from pyts.elf.dwarf_members import resolve_die_address
 
 ResolverFactory = Callable[[Any], ElfResolver]
 
@@ -233,6 +235,67 @@ class FakeOp:
         self.args = args
 
 
+class ConfiguredDwarfExprParser:
+    operation = FakeOp("DW_OP_addr", [0x08000101])
+
+    def __init__(self, structs: object) -> None:
+        pass
+
+    def parse_expr(self, expression: object) -> list[FakeOp]:
+        return [self.operation]
+
+
+def test_normalizes_odd_low_pc_for_thumb_subprogram() -> None:
+    die = FakeDie(
+        "DW_TAG_subprogram",
+        attrs={"DW_AT_low_pc": FakeAttr(0x08000101)},
+    )
+
+    assert resolve_die_address(FakeDwarfInfo([]), FakeCU([]), die) == 0x08000100
+
+
+@pytest.mark.parametrize(
+    ("operation", "expected"),
+    [
+        (FakeOp("DW_OP_addr", [0x08000101]), 0x08000100),
+        (FakeOp("DW_OP_addrx", [1]), 0x20000014),
+    ],
+)
+def test_normalizes_odd_dwarf_expression_address_for_thumb_subprogram(
+    monkeypatch: pytest.MonkeyPatch,
+    operation: FakeOp,
+    expected: int,
+) -> None:
+    ConfiguredDwarfExprParser.operation = operation
+    monkeypatch.setattr(
+        "pyts.elf.dwarf_members.DWARFExprParser",
+        ConfiguredDwarfExprParser,
+    )
+    die = FakeDie("DW_TAG_subprogram", attrs={"DW_AT_location": FakeAttr([0])})
+
+    assert (
+        resolve_die_address(
+            FakeDwarfInfo([], address=0x20000015),
+            FakeCU([]),
+            die,
+        )
+        == expected
+    )
+
+
+def test_preserves_odd_dwarf_address_for_data_variable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ConfiguredDwarfExprParser.operation = FakeOp("DW_OP_addr", [0x20000029])
+    monkeypatch.setattr(
+        "pyts.elf.dwarf_members.DWARFExprParser",
+        ConfiguredDwarfExprParser,
+    )
+    die = FakeDie("DW_TAG_variable", attrs={"DW_AT_location": FakeAttr([0])})
+
+    assert resolve_die_address(FakeDwarfInfo([]), FakeCU([]), die) == 0x20000029
+
+
 class FakeELF:
     def __init__(self) -> None:
         self.sections = [
@@ -245,7 +308,7 @@ class FakeELF:
                     FakeSymbol(
                         "main",
                         {
-                            "st_value": 0x08000100,
+                            "st_value": 0x08000101,
                             "st_size": 64,
                             "st_info": {"type": "STT_FUNC", "bind": "STB_GLOBAL"},
                             "st_other": {"visibility": "STV_DEFAULT"},
@@ -311,6 +374,35 @@ def test_resolves_symbol_metadata(
     assert symbols[0].binding == "global"
     assert symbols[0].section == ".text"
     assert symbols[0].table == ".symtab"
+
+
+def test_normalizes_function_symbol_with_mapping_like_metadata(
+    monkeypatch: Any,
+    resolver_factory: ResolverFactory,
+) -> None:
+    monkeypatch.setattr("pyts.elf.symbol_table.SymbolTableSection", FakeSymbolTable)
+    elf = FakeELF()
+    elf.sections[3] = FakeSymbolTable(
+        ".symtab",
+        [
+            FakeSymbol(
+                "main",
+                {
+                    "st_value": 0x08000101,
+                    "st_size": 64,
+                    "st_info": UserDict(
+                        {"type": "STT_FUNC", "bind": "STB_GLOBAL"}
+                    ),
+                    "st_other": {"visibility": "STV_DEFAULT"},
+                    "st_shndx": 1,
+                },
+            )
+        ],
+    )
+
+    symbols = resolve_symbols_from_elf(resolver_factory, elf, ["main"])
+
+    assert symbols[0].address == 0x08000100
 
 
 def test_reports_missing_symbols(
