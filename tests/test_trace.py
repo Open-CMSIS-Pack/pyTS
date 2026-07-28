@@ -272,15 +272,15 @@ def test_setup_trace_derives_paths_and_enriches_ctrace(
                     "symbol": "main",
                     "access": "w",
                     "address": "0x8000100",
-                    "size": 64,
-                    "type": "func",
+                    "symbol-size": 64,
+                    "symbol-type": "func",
                 },
                 {
                     "symbol": "osRtxInfo.thread.run.curr",
                     "access": "w",
                     "address": "0x20000028",
-                    "size": 4,
-                    "type": "pointer",
+                    "symbol-size": 4,
+                    "symbol-type": "pointer",
                 },
             ]
         }
@@ -362,32 +362,32 @@ def test_setup_trace_enriches_spec_location_entries(
             "symbol-file": expected_symbol_file,
             "symbol": "osRtxInfo.thread.run.curr",
             "address": "0x20000028",
-            "size": 4,
-            "type": "pointer",
+            "symbol-size": 4,
+            "symbol-type": "pointer",
         },
         {
             "location": '"rtx_kernel.c"::osRtxInfo.thread.run.next',
             "symbol-file": expected_symbol_file,
             "symbol": "osRtxInfo.thread.run.next",
             "address": "0x2000002c",
-            "size": 4,
-            "type": "pointer",
+            "symbol-size": 4,
+            "symbol-type": "pointer",
         },
         {
             "location": 'Blinky\u00ad|"rtx_kernel.c"::osRtxInfo.kernel.tick',
             "symbol-file": expected_symbol_file,
             "symbol": "osRtxInfo.kernel.tick",
             "address": "0x20000024",
-            "size": 4,
-            "type": "int",
+            "symbol-size": 4,
+            "symbol-type": "int",
         },
         {
             "location": 'Blinky\u00ad.axf|"rtx_kernel.c"::osRtxInfo.kernel.tick',
             "symbol-file": expected_symbol_file,
             "symbol": "osRtxInfo.kernel.tick",
             "address": "0x20000024",
-            "size": 4,
-            "type": "int",
+            "symbol-size": 4,
+            "symbol-type": "int",
         },
     ]
 
@@ -547,8 +547,8 @@ def test_setup_trace_generates_coresight_register_settings(
         ),
         "symbol": "main",
         "address": 0x08000100,
-        "size": 64,
-        "type": "func",
+        "symbol-size": 64,
+        "symbol-type": "func",
     }
     refs = output["ctrace-run"]["ctrace-refs"]
     assert output["ctrace-run"]["generated-by"] == "pyTS v0.1.0"
@@ -563,7 +563,7 @@ def test_setup_trace_generates_coresight_register_settings(
     assert refs[1]["symbol-address"] == 0x08000100
     assert refs[1]["regs"] == [
         {"name": "DWT_COMP0", "value": 0x08000100},
-        {"name": "DWT_MASK0", "value": 6},
+        {"name": "DWT_MASK0", "value": 2},
         {"name": "DWT_FUNCTION0", "value": 2},
         {"name": "ITM_TCR", "value": 9, "mask": 9},
     ]
@@ -2074,8 +2074,8 @@ def test_setup_trace_enriches_numeric_location_from_address(
                             "symbol-file": str(expected_elf.resolve(strict=False)),
                             "symbol": "main",
                             "address": 0x08000100,
-                            "size": 64,
-                            "type": "func",
+                            "symbol-size": 64,
+                            "symbol-type": "func",
                         }
                     ]
                 }
@@ -2203,8 +2203,8 @@ def test_setup_trace_preserves_consistent_manual_properties_without_warning(
                     "symbol": "main",
                     "access": "w",
                     "address": "0x8000100",
-                    "size": 64,
-                    "type": "func",
+                    "symbol-size": 64,
+                    "symbol-type": "func",
                 }
             ]
         }
@@ -2255,8 +2255,8 @@ def test_setup_trace_enriches_missing_properties_without_overwriting_existing(
                     "symbol": "main",
                     "access": "w",
                     "address": "0x8000100",
-                    "size": 64,
-                    "type": "func",
+                    "symbol-size": 64,
+                    "symbol-type": "func",
                 }
             ]
         }
@@ -2274,8 +2274,8 @@ def test_setup_trace_preserves_inconsistent_manual_properties_and_warns(
                     "symbol": "main",
                     "access": "w",
                     "address": "0xdeadbeef",
-                    "size": "64",
-                    "type": "object",
+                    "symbol-size": "64",
+                    "symbol-type": "object",
                 }
             ]
         }
@@ -2302,7 +2302,7 @@ def test_setup_trace_preserves_inconsistent_manual_properties_and_warns(
     )
     assert any(
         "symbol 'main'" in message
-        and "'size'" in message
+        and "'symbol-size'" in message
         and "'64'" in message
         and "64" in message
         and "keeping existing value" in message
@@ -2310,7 +2310,7 @@ def test_setup_trace_preserves_inconsistent_manual_properties_and_warns(
     )
     assert any(
         "symbol 'main'" in message
-        and "'type'" in message
+        and "'symbol-type'" in message
         and "'object'" in message
         and "'func'" in message
         and "keeping existing value" in message
@@ -2330,8 +2330,8 @@ def test_setup_trace_accepts_manual_integer_address(
                     "symbol": "main",
                     "access": "w",
                     "address": 0x08000100,
-                    "size": 64,
-                    "type": "func",
+                    "symbol-size": 64,
+                    "symbol-type": "func",
                 }
             ]
         }
@@ -2383,8 +2383,8 @@ def test_setup_trace_resolves_symbol_metadata_from_manual_address(
                     "address": "0x8000100",
                     "access": "w",
                     "symbol": "main",
-                    "size": 64,
-                    "type": "func",
+                    "symbol-size": 64,
+                    "symbol-type": "func",
                 }
             ]
         }
@@ -2415,8 +2415,8 @@ def test_setup_trace_resolves_symbol_metadata_from_manual_integer_address(
                     "address": 0x08000100,
                     "access": "w",
                     "symbol": "main",
-                    "size": 64,
-                    "type": "func",
+                    "symbol-size": 64,
+                    "symbol-type": "func",
                 }
             ]
         }
@@ -2435,7 +2435,8 @@ def test_setup_trace_preserves_address_entry_properties_and_warns(
                     "access": "w",
                     "symbol": "",
                     "size": 4,
-                    "type": "object",
+                    "symbol-size": 4,
+                    "symbol-type": "object",
                 }
             ]
         }
@@ -2460,11 +2461,11 @@ def test_setup_trace_preserves_address_entry_properties_and_warns(
         for message in messages
     )
     assert any(
-        "address 0x8000100" in message and "'size'" in message
+        "address 0x8000100" in message and "'symbol-size'" in message
         for message in messages
     )
     assert any(
-        "address 0x8000100" in message and "'type'" in message
+        "address 0x8000100" in message and "'symbol-type'" in message
         for message in messages
     )
     assert read_yaml(project / ".trace" / f"{trace_name}.ctrace-run.yml") == ctrace
@@ -2535,7 +2536,8 @@ def test_setup_trace_resolves_dwarf_member_from_manual_address_and_size(
                     "address": "0x20000028",
                     "size": 4,
                     "symbol": "osRtxInfo.thread.run.curr",
-                    "type": "pointer",
+                    "symbol-size": 4,
+                    "symbol-type": "pointer",
                 }
             ]
         }
@@ -2627,7 +2629,8 @@ def test_setup_trace_prefers_dwarf_member_over_symbol_for_sized_address(
                     "address": "0x20000028",
                     "size": 4,
                     "symbol": "osRtxInfo.thread.run.curr",
-                    "type": "pointer",
+                    "symbol-size": 4,
+                    "symbol-type": "pointer",
                 }
             ]
         }
@@ -2668,8 +2671,10 @@ def test_setup_trace_falls_back_to_symbol_for_missing_or_non_integer_size(
         resolve_object_members_by_address=fake_resolve_object_members_by_address,
     )
 
-    with pytest.warns(UserWarning, match="'size'"):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
         result = setup_trace(cbuild_run)
+    assert caught == []
 
     assert member_calls == []
     assert result.symbols == ["main", "main"]
@@ -2679,14 +2684,15 @@ def test_setup_trace_falls_back_to_symbol_for_missing_or_non_integer_size(
                 {
                     "address": "0x8000100",
                     "symbol": "main",
-                    "size": 64,
-                    "type": "func",
+                    "symbol-size": 64,
+                    "symbol-type": "func",
                 },
                 {
                     "address": "0x8000100",
                     "size": "64",
                     "symbol": "main",
-                    "type": "func",
+                    "symbol-size": 64,
+                    "symbol-type": "func",
                 },
             ]
         }
@@ -2784,22 +2790,22 @@ def test_setup_trace_resolves_symbol_keys_anywhere_in_yaml(
         "symbol": "main",
         "access": "w",
         "address": "0x8000100",
-        "size": 64,
-        "type": "func",
+        "symbol-size": 64,
+        "symbol-type": "func",
     }
     assert output["ctrace"]["events"][0]["watch"] == {
         "symbol": "osRtxInfo.thread.run.curr",
         "access": "r",
         "address": "0x20000028",
-        "size": 4,
-        "type": "pointer",
+        "symbol-size": 4,
+        "symbol-type": "pointer",
     }
     assert output["ctrace"]["events"][1]["groups"][0][0] == {
         "symbol": "main",
         "label": "duplicate",
         "address": "0x8000100",
-        "size": 64,
-        "type": "func",
+        "symbol-size": 64,
+        "symbol-type": "func",
     }
     assert output["ctrace"]["events"][2]["ignored"] == {"symbol": ""}
     assert output["ctrace"]["events"][3]["also_ignored"] == {"symbol": 123}
