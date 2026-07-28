@@ -536,6 +536,9 @@ def test_setup_trace_generates_coresight_register_settings(
     output = read_yaml(output_path)
     run = output["ctrace-run"]
     assert set(run) == {"generated-by", "ctrace-setup", "ctrace-refs"}
+    assert run["ctrace-setup"][0]["itm"]["atbid"] == 1
+    assert run["ctrace-setup"][0]["itm"]["enable"] == 0xF
+    assert run["ctrace-setup"][0]["itm"]["privileged"] == 1
     assert run["ctrace-setup"][0]["data"][0] == {
         "location": "main",
         "access": "RW",
@@ -556,6 +559,7 @@ def test_setup_trace_generates_coresight_register_settings(
         "ctrace-ref": "timestamps",
         "type": "dwt",
         "regs": [{"name": "ITM_TCR", "value": 0x103, "mask": 0x303}],
+        "stream": 1,
     }
     assert refs[1]["ctrace-ref"] == "data#0"
     assert refs[1]["type"] == "dwt"
@@ -574,6 +578,7 @@ def test_setup_trace_generates_coresight_register_settings(
             {"name": "DWT_CTRL", "value": 1 << 16, "mask": 1 << 16},
             {"name": "ITM_TCR", "value": 9, "mask": 9},
         ],
+        "stream": 1,
     }
     assert refs[3]["regs"][0] == {
         "name": "DWT_CTRL",
@@ -583,17 +588,20 @@ def test_setup_trace_generates_coresight_register_settings(
     assert refs[4]["regs"] == [
         {"name": "ITM_TER0", "value": 0xF},
         {"name": "ITM_TPR", "value": 1, "mask": 0xF},
-        {"name": "ITM_TCR", "value": 1, "mask": 1},
+        {"name": "ITM_TCR", "value": 0x10001, "mask": 0x7F0001},
     ]
     assert refs[5]["regs"] == [
         {"name": "DWT_CTRL", "value": 1 << 10, "mask": 0xC00},
         {"name": "ITM_TCR", "value": 5, "mask": 5},
     ]
+    assert all(ref["stream"] == 1 for ref in refs)
     output_text = output_path.read_text(encoding="utf-8")
     assert "address: 0x08000100" in output_text
     assert "symbol-address: 0x08000100" in output_text
     assert "value: 0x00000103" in output_text
     assert "mask: 0x00000303" in output_text
+    assert "value: 0x00010001" in output_text
+    assert "mask: 0x007f0001" in output_text
     assert "exceptions:\n" in output_text
     assert "exceptions: null" not in output_text
 
@@ -662,6 +670,7 @@ def test_setup_trace_scopes_refs_and_reports_unsupported_core(
     setup_trace(cbuild_run)
 
     output = read_yaml(project / ".trace" / f"{trace_name}.ctrace-run.yml")
+    assert output["ctrace-run"]["ctrace-setup"][0]["itm"]["atbid"] == 1
     assert output["ctrace-run"]["ctrace-refs"] == [
         {
             "ctrace-ref": "application/itm",
@@ -670,8 +679,9 @@ def test_setup_trace_scopes_refs_and_reports_unsupported_core(
             "regs": [
                 {"name": "ITM_TER0", "value": 1},
                 {"name": "ITM_TPR", "value": 0, "mask": 0xF},
-                {"name": "ITM_TCR", "value": 1, "mask": 1},
+                {"name": "ITM_TCR", "value": 0x10001, "mask": 0x7F0001},
             ],
+            "stream": 1,
         },
         {
             "ctrace-ref": "network/exceptions",
@@ -680,6 +690,136 @@ def test_setup_trace_scopes_refs_and_reports_unsupported_core(
             "error": "core CM0PLUS has no architectural ITM/DWT trace support",
         },
     ]
+
+
+def _generated_run(
+    setups: list[dict[str, Any]],
+    processors: list[Processor],
+) -> dict[str, Any]:
+    """Generate and unwrap a ctrace-run document for generator tests."""
+
+    output = generate_ctrace_run(
+        cast(Any, {"ctrace": {"setup": setups}}),
+        processors,
+    )
+    run = output.get("ctrace-run")
+    assert isinstance(run, dict)
+    return cast(dict[str, Any], run)
+
+
+def test_generate_ctrace_run_assigns_smallest_free_atbids_per_processor() -> None:
+    run = _generated_run(
+        [
+            {"pname": "CM7", "itm": {"enable": 1, "atbid": 2}},
+            {"pname": "CM4", "data": [{"address": 0x20000000}]},
+        ],
+        [Processor.from_core("CM7", "CM7"), Processor.from_core("CM4", "CM4")],
+    )
+
+    assert [setup["itm"]["atbid"] for setup in run["ctrace-setup"]] == [2, 1]
+    assert [ref["stream"] for ref in run["ctrace-refs"]] == [2, 1]
+
+
+def test_generate_ctrace_run_reuses_atbid_for_multiple_setups_of_processor() -> None:
+    run = _generated_run(
+        [
+            {"pname": "CM4", "itm": {"enable": 1}},
+            {"pname": "CM4", "exceptions": None},
+        ],
+        [Processor.from_core("CM4", "CM4")],
+    )
+
+    assert [setup["itm"]["atbid"] for setup in run["ctrace-setup"]] == [1, 1]
+    assert [ref["stream"] for ref in run["ctrace-refs"]] == [1, 1]
+
+
+def test_generate_ctrace_run_adds_atbid_without_explicit_itm_configuration() -> None:
+    run = _generated_run(
+        [{"pname": "CM4", "data": [{"address": 0x20000000}]}],
+        [Processor.from_core("CM4", "CM4")],
+    )
+
+    assert run["ctrace-setup"][0]["itm"] == {"atbid": 1}
+    assert run["ctrace-refs"][0]["stream"] == 1
+
+
+def test_generate_ctrace_run_does_not_assign_atbid_when_itm_is_disabled() -> None:
+    run = _generated_run(
+        [{"pname": "CM4", "synchronization": [{"DWT": 0}]}],
+        [Processor.from_core("CM4", "CM4")],
+    )
+
+    assert "itm" not in run["ctrace-setup"][0]
+    assert "stream" not in run["ctrace-refs"][0]
+
+
+def test_generate_ctrace_run_rejects_atbid_conflicts() -> None:
+    with pytest.raises(ValueError, match="multiple processors"):
+        _generated_run(
+            [
+                {"pname": "CM7", "itm": {"enable": 1, "atbid": 1}},
+                {"pname": "CM4", "itm": {"enable": 1, "atbid": 1}},
+            ],
+            [
+                Processor.from_core("CM7", "CM7"),
+                Processor.from_core("CM4", "CM4"),
+            ],
+        )
+
+
+@pytest.mark.parametrize("atbid", [0, -1, 0x80, True, "invalid"])
+def test_generate_ctrace_run_rejects_invalid_atbid(atbid: Any) -> None:
+    with pytest.raises(ValueError, match="positive integer"):
+        _generated_run(
+            [{"itm": {"enable": 1, "atbid": atbid}}],
+            [Processor.from_core("CM4", None)],
+        )
+
+
+def test_generate_ctrace_run_requires_pname_for_unqualified_multi_processor_itm() -> None:
+    with pytest.raises(ValueError, match="must specify pname"):
+        _generated_run(
+            [{"itm": {"enable": 1}}],
+            [Processor.from_core("CM7", "CM7"), Processor.from_core("CM4", "CM4")],
+        )
+
+
+def test_generate_ctrace_run_allows_unqualified_single_processor_itm() -> None:
+    run = _generated_run(
+        [{"itm": {"enable": 1}}],
+        [Processor.from_core("CM4", None)],
+    )
+
+    assert run["ctrace-setup"][0]["itm"]["atbid"] == 1
+    assert run["ctrace-refs"][0]["stream"] == 1
+
+
+def test_generate_ctrace_run_rejects_atbid_exhaustion() -> None:
+    processors = [
+        Processor.from_core("CM4", f"CM4-{index}")
+        for index in range(128)
+    ]
+    setups = [
+        {"pname": processor.pname, "itm": {"enable": 1, "atbid": index + 1}}
+        for index, processor in enumerate(processors[:127])
+    ]
+    setups.append({"pname": processors[127].pname, "itm": {"enable": 1}})
+
+    with pytest.raises(ValueError, match="no available ATBID"):
+        _generated_run(setups, processors)
+
+
+def test_generate_ctrace_run_encodes_atbid_in_itm_trace_bus_id() -> None:
+    run = _generated_run(
+        [{"itm": {"enable": 1, "atbid": 0x7F}}],
+        [Processor.from_core("CM4", None)],
+    )
+
+    assert run["ctrace-refs"][0]["regs"][-1] == {
+        "name": "ITM_TCR",
+        "value": 0x7F0001,
+        "mask": 0x7F0001,
+    }
 
 
 @pytest.mark.parametrize(
