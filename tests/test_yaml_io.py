@@ -49,6 +49,14 @@ def test_write_yaml_formats_hex_int_as_numeric_hex_scalar(tmp_path: Path) -> Non
     assert read_yaml(path) == {"address": 0x08000100, "mask": 0x303}
 
 
+def test_write_yaml_serializes_numeric_lists_in_flow_style(tmp_path: Path) -> None:
+    path = tmp_path / "source.yml"
+
+    write_yaml(path, {"source": [0, 1]})
+
+    assert path.read_text(encoding="utf-8") == "source: [0, 1]\n"
+
+
 def test_read_yaml_preserves_hexadecimal_but_not_decimal_integer_style(
     tmp_path: Path,
 ) -> None:

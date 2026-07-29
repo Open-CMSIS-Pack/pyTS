@@ -324,7 +324,30 @@ def _feature_ref(
             ref["symbol-address"] = HexInt(address)
     if regs:
         ref["regs"] = cast(JsonValue, regs)
+    if ref["type"] == "dwt":
+        source = _dwt_source(regs)
+        if source is not None:
+            ref["source"] = cast(JsonValue, source)
     return ref
+
+
+def _dwt_source(regs: list[YamlMapping]) -> int | list[int] | None:
+    """Return DWT comparator IDs used by a generated register sequence."""
+
+    indices: list[int] = []
+    for register in regs:
+        name = register.get("name")
+        if not isinstance(name, str) or not name.startswith("DWT_COMP"):
+            continue
+        suffix = name.removeprefix("DWT_COMP")
+        if not suffix.isdigit():
+            continue
+        index = int(suffix)
+        if index not in indices:
+            indices.append(index)
+    if not indices:
+        return None
+    return indices[0] if len(indices) == 1 else indices
 
 
 def _feature_type(feature: str) -> str:
