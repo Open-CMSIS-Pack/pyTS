@@ -743,6 +743,20 @@ def test_generate_ctrace_run_adds_atbid_without_explicit_itm_configuration() -> 
     assert run["ctrace-refs"][0]["stream"] == 1
 
 
+def test_generate_ctrace_run_propagates_implicit_atbid_to_data_itm_tcr() -> None:
+    run = _generated_run(
+        [{"pname": "CM4", "data": [{"address": 0x20000000}]}],
+        [Processor.from_core("CM4", "CM4")],
+    )
+
+    assert run["ctrace-setup"][0]["itm"] == {"atbid": 1}
+    assert run["ctrace-refs"][0]["regs"][-1] == {
+        "name": "ITM_TCR",
+        "value": 0x10009,
+        "mask": 0x70009,
+    }
+
+
 def test_generate_ctrace_run_does_not_assign_atbid_when_itm_is_disabled() -> None:
     run = _generated_run(
         [{"pname": "CM4", "synchronization": [{"DWT": 0}]}],
