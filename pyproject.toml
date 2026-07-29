@@ -47,6 +47,10 @@ lint = [
 license = [
   "pip-licenses>=5.5.5",
 ]
+installer = [
+  "build>=1.5.0",
+  "pyinstaller>=6.21.0"
+]
 
 [project.scripts]
 pyts = "pyts.cli:main"
