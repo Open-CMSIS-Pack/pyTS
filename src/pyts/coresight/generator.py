@@ -319,6 +319,16 @@ def _feature_ref(
     ref: YamlMapping = {"ctrace-ref": ref_name, "type": _feature_type(feature)}
     if ref_pname is not None:
         ref["pname"] = ref_pname
+    if feature == "data" and isinstance(value, dict):
+        for property_name in (
+            "symbol",
+            "symbol-file",
+            "symbol-size",
+            "symbol-type",
+            "label",
+        ):
+            if property_name in value:
+                ref[property_name] = value[property_name]
     if coresight is None:
         ref["error"] = f"core {processor.core} has no architectural ITM/DWT trace support"
         return ref, False
