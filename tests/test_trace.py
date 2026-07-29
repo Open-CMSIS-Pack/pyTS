@@ -717,7 +717,7 @@ def test_generate_ctrace_run_assigns_smallest_free_atbids_per_processor() -> Non
     )
 
     assert [setup["itm"]["atbid"] for setup in run["ctrace-setup"]] == [2, 1]
-    assert [ref["stream"] for ref in run["ctrace-refs"]] == [2, 1]
+    assert [ref["stream"] for ref in run["ctrace-refs"]] == [2, 1, 1]
 
 
 def test_generate_ctrace_run_reuses_atbid_for_multiple_setups_of_processor() -> None:
@@ -750,10 +750,13 @@ def test_generate_ctrace_run_propagates_implicit_atbid_to_data_itm_tcr() -> None
     )
 
     assert run["ctrace-setup"][0]["itm"] == {"atbid": 1}
-    assert run["ctrace-refs"][0]["regs"][-1] == {
-        "name": "ITM_TCR",
-        "value": 0x10009,
-        "mask": 0x70009,
+    assert run["ctrace-refs"][-1] == {
+        "ctrace-ref": "CM4/itm",
+        "type": "itm",
+        "regs": [
+            {"name": "ITM_TCR", "value": 0x10000, "mask": 0x7F0000}
+        ],
+        "stream": 1,
     }
 
 
@@ -1521,10 +1524,17 @@ def test_generate_ctrace_run_allocates_comparators_per_processor() -> None:
     )
     refs = output["ctrace-run"]["ctrace-refs"]
 
-    assert [ref["regs"][0]["name"] for ref in refs] == ["DWT_COMP0", "DWT_COMP0"]
-    assert [ref["regs"][2]["name"] for ref in refs] == ["DWT_COMP1", "DWT_COMP1"]
-    assert [ref["source"] for ref in refs] == [[0, 1], [0, 1]]
-    assert [ref["pname"] for ref in refs] == ["application", "network"]
+    dwt_refs = [ref for ref in refs if ref["type"] == "dwt"]
+    assert [ref["regs"][0]["name"] for ref in dwt_refs] == [
+        "DWT_COMP0",
+        "DWT_COMP0",
+    ]
+    assert [ref["regs"][2]["name"] for ref in dwt_refs] == [
+        "DWT_COMP1",
+        "DWT_COMP1",
+    ]
+    assert [ref["source"] for ref in dwt_refs] == [[0, 1], [0, 1]]
+    assert [ref["pname"] for ref in dwt_refs] == ["application", "network"]
 
 
 def test_dwtv1_reserves_match_pair_per_processor() -> None:
@@ -1570,11 +1580,12 @@ def test_dwtv1_reserves_match_pair_per_processor() -> None:
     )
     refs = output["ctrace-run"]["ctrace-refs"]
 
-    assert [ref["regs"][0]["name"] for ref in refs] == [
+    dwt_refs = [ref for ref in refs if ref["type"] == "dwt"]
+    assert [ref["regs"][0]["name"] for ref in dwt_refs] == [
         "DWT_COMP0",
         "DWT_COMP0",
     ]
-    assert [ref["regs"][3]["name"] for ref in refs] == [
+    assert [ref["regs"][3]["name"] for ref in dwt_refs] == [
         "DWT_COMP1",
         "DWT_COMP1",
     ]

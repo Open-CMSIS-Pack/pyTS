@@ -424,13 +424,42 @@ def _assign_atbids(
         reserved.add(next_atbid)
         next_atbid += 1
 
+    implicit_itm_refs: dict[Processor, YamlMapping] = {}
+    explicit_itm_processors = {
+        item.processor
+        for item in generated
+        if item.ref.get("type") == "itm"
+    }
     for item in streamed:
         atbid = processor_ids[item.processor]
+        setup_pname = item.setup.get("pname")
+        if (
+            item.processor not in explicit_itm_processors
+            and "itm" not in item.setup
+            and isinstance(setup_pname, str)
+            and setup_pname
+        ):
+            implicit_itm_refs.setdefault(item.processor, item.setup)
         _set_setup_atbid(item.setup, atbid)
         _set_itm_trace_bus_id(item.ref, atbid)
         item.ref["stream"] = atbid
 
-    return [item.ref for item in generated]
+    refs = [item.ref for item in generated]
+    for processor, setup in implicit_itm_refs.items():
+        ref: YamlMapping = {"ctrace-ref": "itm", "type": "itm"}
+        if len(processors) > 1:
+            ref["pname"] = processor.pname
+        setup_pname = setup.get("pname")
+        if isinstance(setup_pname, str) and setup_pname:
+            ref["ctrace-ref"] = f"{setup_pname}/itm"
+        ref["regs"] = cast(
+            JsonValue,
+            [_reg("ITM_TCR", processor_ids[processor] << _ITM_TRACE_BUS_ID_POS,
+                   _ITM_TRACE_BUS_ID_MASK)],
+        )
+        ref["stream"] = processor_ids[processor]
+        refs.append(ref)
+    return refs
 
 
 def _setup_targets(
