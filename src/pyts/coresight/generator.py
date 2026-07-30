@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from collections.abc import Callable
+import re
 from typing import cast
 
 from pyts._version import package_version
@@ -459,7 +460,20 @@ def _assign_atbids(
         )
         ref["stream"] = processor_ids[processor]
         refs.append(ref)
+    refs.sort(key=_ref_sort_key)
     return refs
+
+
+def _ref_sort_key(ref: YamlMapping) -> tuple[object, ...]:
+    """Return a natural, case-sensitive sort key for a trace reference."""
+
+    name = ref["ctrace-ref"]
+    if not isinstance(name, str):
+        raise TypeError("ctrace-ref must be a string")
+    return tuple(
+        (1, int(part)) if part.isdigit() else (0, part)
+        for part in re.split(r"(\d+)", name)
+    )
 
 
 def _setup_targets(
