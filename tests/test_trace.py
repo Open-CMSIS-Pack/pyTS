@@ -555,27 +555,27 @@ def test_setup_trace_generates_coresight_register_settings(
     }
     refs = output["ctrace-run"]["ctrace-refs"]
     assert output["ctrace-run"]["generated-by"] == "pyTS v0.1.0"
-    assert refs[0] == {
+    refs_by_name = {ref["ctrace-ref"]: ref for ref in refs}
+    assert refs_by_name["timestamps"] == {
         "ctrace-ref": "timestamps",
         "type": "dwt",
         "regs": [{"name": "ITM_TCR", "value": 0x103, "mask": 0x303}],
         "stream": 1,
     }
-    assert refs[1]["ctrace-ref"] == "data#0"
-    assert refs[1]["type"] == "dwt"
-    assert refs[1]["source"] == 0
-    assert refs[1]["symbol-address"] == 0x08000100
-    assert refs[1]["symbol"] == "main"
-    assert refs[1]["symbol-file"].endswith("/Blinky.axf")
-    assert refs[1]["symbol-size"] == 64
-    assert refs[1]["symbol-type"] == "func"
-    assert refs[1]["regs"] == [
+    assert refs_by_name["data#0"]["type"] == "dwt"
+    assert refs_by_name["data#0"]["source"] == 0
+    assert refs_by_name["data#0"]["symbol"] == "main"
+    assert refs_by_name["data#0"]["symbol-address"] == 0x08000100
+    assert refs_by_name["data#0"]["symbol-file"].endswith("/Blinky.axf")
+    assert refs_by_name["data#0"]["symbol-size"] == 64
+    assert refs_by_name["data#0"]["symbol-type"] == "func"
+    assert refs_by_name["data#0"]["regs"] == [
         {"name": "DWT_COMP0", "value": 0x08000100},
         {"name": "DWT_MASK0", "value": 2},
         {"name": "DWT_FUNCTION0", "value": 2},
         {"name": "ITM_TCR", "value": 9, "mask": 9},
     ]
-    assert refs[2] == {
+    assert refs_by_name["exceptions"] == {
         "ctrace-ref": "exceptions",
         "type": "exception",
         "regs": [
@@ -584,17 +584,17 @@ def test_setup_trace_generates_coresight_register_settings(
         ],
         "stream": 1,
     }
-    assert refs[3]["regs"][0] == {
+    assert refs_by_name["events#0"]["regs"][0] == {
         "name": "DWT_CTRL",
         "value": 1 << 17,
         "mask": 1 << 17,
     }
-    assert refs[4]["regs"] == [
+    assert refs_by_name["itm"]["regs"] == [
         {"name": "ITM_TER0", "value": 0xF},
         {"name": "ITM_TPR", "value": 1, "mask": 0xF},
         {"name": "ITM_TCR", "value": 0x10001, "mask": 0x7F0001},
     ]
-    assert refs[5]["regs"] == [
+    assert refs_by_name["synchronization#0"]["regs"] == [
         {"name": "DWT_CTRL", "value": 1 << 10, "mask": 0xC00},
         {"name": "ITM_TCR", "value": 5, "mask": 5},
     ]
@@ -721,7 +721,26 @@ def test_generate_ctrace_run_assigns_smallest_free_atbids_per_processor() -> Non
     )
 
     assert [setup["itm"]["atbid"] for setup in run["ctrace-setup"]] == [2, 1]
-    assert [ref["stream"] for ref in run["ctrace-refs"]] == [2, 1, 1]
+    assert [ref["stream"] for ref in run["ctrace-refs"]] == [1, 1, 2]
+
+
+def test_generate_ctrace_run_sorts_refs_naturally_by_name() -> None:
+    run = _generated_run(
+        [
+            {
+                "timestamps": None,
+                "data": [{"address": 0x20000000 + index} for index in range(11)],
+                "exceptions": None,
+            }
+        ],
+        [Processor.from_core("CM4", "CM4")],
+    )
+
+    assert [ref["ctrace-ref"] for ref in run["ctrace-refs"]] == [
+        *(f"data#{index}" for index in range(11)),
+        "exceptions",
+        "timestamps",
+    ]
 
 
 def test_generate_ctrace_run_reuses_atbid_for_multiple_setups_of_processor() -> None:

@@ -13,6 +13,65 @@ permissions:
   contents: read
 
 jobs:
+  build:
+    name: Build ${{ matrix.os }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [linux, windows, darwin]
+        arch: [amd64, arm64]
+        include:
+          - { os: linux, arch: amd64, runner: ubuntu-22.04 }
+          - { os: linux, arch: arm64, runner: ubuntu-22.04-arm }
+          - { os: windows, arch: amd64, runner: windows-2022 }
+          - { os: windows, arch: arm64, runner: windows-11-arm }
+          - { os: darwin, arch: arm64, runner: macos-14 }
+        exclude:
+          - { os: darwin, arch: amd64 }
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: 3.12
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install '.[installer]'
+
+      - name: Build package
+        run: python -m build
+
+      - name: Build executable
+        run: pyinstaller --clean --noconfirm --onefile --name pyTS src/pyts/__main__.py
+
+      - name: Archive executable
+        id: archive
+        working-directory: dist
+        shell: bash
+        run: |
+          if [[ "${{ matrix.os }}" == "windows" ]]; then
+            7z a pyTS-${{ matrix.os }}-${{ matrix.arch }}.zip pyTS.exe
+            echo "ARCHIVE=pyTS-${{ matrix.os }}-${{ matrix.arch }}.zip" >> $GITHUB_OUTPUT
+          else
+            tar -czf pyTS-${{ matrix.os }}-${{ matrix.arch }}.tar.gz pyTS
+            echo "ARCHIVE=pyTS-${{ matrix.os }}-${{ matrix.arch }}.tar.gz" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          name: ${{ steps.archive.outputs.ARCHIVE }}
+          path: dist/${{ steps.archive.outputs.ARCHIVE }}
+
   test:
     name: Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
@@ -39,7 +98,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e '.[lint]'
+          python -m pip install '.[lint]'
 
       - name: Run tests
         run: python -m pytest -q
@@ -49,15 +108,3 @@ jobs:
 
       - name: Run mypy
         run: python -m mypy
-
-      - name: Build package
-        if: matrix.python-version == '3.12'
-        run: |
-          python -m pip install build
-          python -m build
-
-      - name: Build pyInstaller
-        if: matrix.python-version == '3.12'
-        run: |
-          python -m pip install pyinstaller
-          pyinstaller --clean --noconfirm --onefile --name pyTS src/pyts/__main__.py
