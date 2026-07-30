@@ -564,7 +564,11 @@ def test_setup_trace_generates_coresight_register_settings(
     }
     assert refs_by_name["data#0"]["type"] == "dwt"
     assert refs_by_name["data#0"]["source"] == 0
+    assert refs_by_name["data#0"]["symbol"] == "main"
     assert refs_by_name["data#0"]["symbol-address"] == 0x08000100
+    assert refs_by_name["data#0"]["symbol-file"].endswith("/Blinky.axf")
+    assert refs_by_name["data#0"]["symbol-size"] == 64
+    assert refs_by_name["data#0"]["symbol-type"] == "func"
     assert refs_by_name["data#0"]["regs"] == [
         {"name": "DWT_COMP0", "value": 0x08000100},
         {"name": "DWT_MASK0", "value": 2},
@@ -1125,6 +1129,98 @@ def _generate_data_refs(
         list[dict[str, Any]],
         output["ctrace-run"]["ctrace-refs"],
     )
+
+
+def test_generate_ctrace_run_copies_data_location_metadata_to_ref() -> None:
+    _output, refs = _generate_data_refs(
+        [
+            {
+                "location": "counter",
+                "address": 0x20000000,
+                "symbol": "counter",
+                "symbol-file": "counter.axf",
+                "symbol-size": 8,
+                "symbol-type": "object",
+                "label": "Counter value",
+            }
+        ],
+        Processor.from_core("CM4", None),
+    )
+
+    assert refs[0]["symbol"] == "counter"
+    assert refs[0]["symbol-file"] == "counter.axf"
+    assert refs[0]["symbol-size"] == 8
+    assert refs[0]["symbol-type"] == "object"
+    assert refs[0]["label"] == "Counter value"
+    assert refs[0]["symbol-address"] == 0x20000000
+
+
+def test_generate_ctrace_run_omits_absent_data_location_metadata() -> None:
+    _output, refs = _generate_data_refs(
+        [{"location": "counter", "address": 0x20000000}],
+        Processor.from_core("CM4", None),
+    )
+
+    assert all(
+        property_name not in refs[0]
+        for property_name in (
+            "symbol",
+            "symbol-file",
+            "symbol-size",
+            "symbol-type",
+            "label",
+        )
+    )
+
+
+def test_generate_ctrace_run_copies_data_metadata_when_generation_fails() -> None:
+    _output, refs = _generate_data_refs(
+        [
+            {
+                "location": "counter",
+                "address": 0x20000000,
+                "size": 3,
+                "symbol": "counter",
+                "symbol-file": "counter.axf",
+                "symbol-size": 8,
+                "symbol-type": "object",
+                "label": "Counter value",
+            }
+        ],
+        Processor.from_core("CM4", None),
+    )
+
+    assert "error" in refs[0]
+    assert refs[0]["symbol"] == "counter"
+    assert refs[0]["symbol-file"] == "counter.axf"
+    assert refs[0]["symbol-size"] == 8
+    assert refs[0]["symbol-type"] == "object"
+    assert refs[0]["label"] == "Counter value"
+
+
+def test_generate_ctrace_run_copies_data_metadata_for_unsupported_core() -> None:
+    _output, refs = _generate_data_refs(
+        [
+            {
+                "location": "counter",
+                "symbol": "counter",
+                "symbol-file": "counter.axf",
+                "symbol-size": 8,
+                "symbol-type": "object",
+                "label": "Counter value",
+            }
+        ],
+        Processor.from_core("CM0", None),
+    )
+
+    assert refs[0]["error"] == (
+        "core CM0 has no architectural ITM/DWT trace support"
+    )
+    assert refs[0]["symbol"] == "counter"
+    assert refs[0]["symbol-file"] == "counter.axf"
+    assert refs[0]["symbol-size"] == 8
+    assert refs[0]["symbol-type"] == "object"
+    assert refs[0]["label"] == "Counter value"
 
 
 @pytest.mark.parametrize(
