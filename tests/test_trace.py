@@ -40,6 +40,7 @@ from pyts.coresight.v2 import DwtV2CoreSight
 from pyts.elf import MemberInfo, SymbolInfo
 from pyts.trace import setup_trace
 from pyts.trace import transform_trace_document
+from pyts._version import package_version
 from pyts.symbols import SymbolCatalog
 from pyts.yaml_io import HexInt, read_yaml, write_yaml
 
@@ -554,7 +555,7 @@ def test_setup_trace_generates_coresight_register_settings(
         "symbol-type": "func",
     }
     refs = output["ctrace-run"]["ctrace-refs"]
-    assert output["ctrace-run"]["generated-by"] == "pyTS v0.1.0"
+    assert output["ctrace-run"]["generated-by"] == f"pyTS v{package_version()}"
     refs_by_name = {ref["ctrace-ref"]: ref for ref in refs}
     assert refs_by_name["timestamps"] == {
         "ctrace-ref": "timestamps",
@@ -642,7 +643,7 @@ def test_generate_ctrace_run_creates_fresh_document_with_enriched_setup() -> Non
 
     assert output == {
         "ctrace-run": {
-            "generated-by": "pyTS v0.1.0",
+            "generated-by": f"pyTS v{package_version()}",
             "ctrace-setup": setup,
             "ctrace-refs": [],
         }
