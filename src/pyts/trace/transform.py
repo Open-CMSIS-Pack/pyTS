@@ -158,10 +158,13 @@ def _classify_refs(
         and bool(cast(str, ref.value.get("symbol")))
     ]
     addresses = [
-        ref for ref in refs
+        ref
+        for ref in refs
         if not has_location(ref.value)
-        and not (isinstance(ref.value.get("symbol"), str)
-                 and bool(cast(str, ref.value.get("symbol"))))
+        and not (
+            isinstance(ref.value.get("symbol"), str)
+            and bool(cast(str, ref.value.get("symbol")))
+        )
         and manual_address(ref.value) is not None
     ]
     return locations, symbols, addresses
