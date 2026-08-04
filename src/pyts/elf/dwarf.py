@@ -192,46 +192,59 @@ class DwarfIndex:
         exact_symbols = symbols.by_name(include_undefined)
         for cu in info.iter_CUs():
             for die in cu.iter_DIEs():
-                if die.tag not in {"DW_TAG_variable", "DW_TAG_subprogram"}:
-                    continue
-                name = dwarf_name(die)
-                if name not in wanted or not die_source_matches(
-                    info, cu, die, source_file
-                ):
-                    continue
-                symbol = exact_symbols.get(name)
-                die_source = die_source_file(info, cu, die)
+                symbol = self._plain_symbol_from_die(
+                    info, cu, die, wanted, source_file, exact_symbols
+                )
                 if symbol is not None:
-                    results.append(
-                        SymbolInfo(
-                            name=symbol.name,
-                            address=symbol.address,
-                            size=symbol.size,
-                            type=symbol.type,
-                            binding=symbol.binding,
-                            visibility=symbol.visibility,
-                            section=symbol.section,
-                            table=symbol.table,
-                            source_file=die_source,
-                        )
-                    )
-                    continue
-                address = resolve_die_address(info, cu, die)
-                if address is not None:
-                    results.append(
-                        SymbolInfo(
-                            name=name,
-                            address=address,
-                            size=die_size(cu, die),
-                            type=die_symbol_type(die),
-                            binding="",
-                            visibility="",
-                            section=None,
-                            table="dwarf",
-                            source_file=die_source,
-                        )
-                    )
+                    results.append(symbol)
         return results
+
+    @staticmethod
+    def _plain_symbol_from_die(
+        info: Any,
+        cu: Any,
+        die: Any,
+        wanted: set[str],
+        source_file: str,
+        exact_symbols: dict[str, SymbolInfo],
+    ) -> SymbolInfo | None:
+        """Build one source-qualified symbol from a matching DIE."""
+
+        if die.tag not in {"DW_TAG_variable", "DW_TAG_subprogram"}:
+            return None
+        name = dwarf_name(die)
+        if name not in wanted or not die_source_matches(
+            info, cu, die, source_file
+        ):
+            return None
+        die_source = die_source_file(info, cu, die)
+        symbol = exact_symbols.get(name)
+        if symbol is not None:
+            return SymbolInfo(
+                name=symbol.name,
+                address=symbol.address,
+                size=symbol.size,
+                type=symbol.type,
+                binding=symbol.binding,
+                visibility=symbol.visibility,
+                section=symbol.section,
+                table=symbol.table,
+                source_file=die_source,
+            )
+        address = resolve_die_address(info, cu, die)
+        if address is None:
+            return None
+        return SymbolInfo(
+            name=name,
+            address=address,
+            size=die_size(cu, die),
+            type=die_symbol_type(die),
+            binding="",
+            visibility="",
+            section=None,
+            table="dwarf",
+            source_file=die_source,
+        )
 
     def _member_cache(self) -> list[MemberInfo]:
         """Discover and cache every addressable DWARF object member."""
@@ -239,28 +252,29 @@ class DwarfIndex:
         if self._all_members is not None:
             return self._all_members
         info = self._dwarf_info()
-        members: list[MemberInfo] = []
-        if info is not None:
-            for cu in info.iter_CUs():
-                for die in cu.iter_DIEs():
-                    if die.tag != "DW_TAG_variable":
-                        continue
-                    base_name = dwarf_name(die)
-                    base_address = resolve_die_address(info, cu, die)
-                    base_type = unwrap_dwarf_type(die_type(die))
-                    if not base_name or base_address is None or base_type is None:
-                        continue
-                    members.extend(
-                        iter_object_members(
-                            info,
-                            cu,
-                            die,
-                            base_name,
-                            base_address,
-                            base_type,
-                        )
-                    )
+        members = [] if info is None else self._discover_members(info)
         self._all_members = members
+        return members
+
+    @staticmethod
+    def _discover_members(info: Any) -> list[MemberInfo]:
+        """Collect addressable members from all variable DIEs."""
+
+        members: list[MemberInfo] = []
+        for cu in info.iter_CUs():
+            for die in cu.iter_DIEs():
+                if die.tag != "DW_TAG_variable":
+                    continue
+                base_name = dwarf_name(die)
+                base_address = resolve_die_address(info, cu, die)
+                base_type = unwrap_dwarf_type(die_type(die))
+                if not base_name or base_address is None or base_type is None:
+                    continue
+                members.extend(
+                    iter_object_members(
+                        info, cu, die, base_name, base_address, base_type
+                    )
+                )
         return members
 
     def _dwarf_info(self) -> Any | None:

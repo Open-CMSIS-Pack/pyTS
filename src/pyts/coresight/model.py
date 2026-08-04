@@ -166,48 +166,67 @@ class DataTraceRequest:
 
         if not isinstance(value, dict):
             raise ValueError("data entry must be a mapping")
-        address = _integer(value.get("address"))
-        if address is None:
-            error = value.get("error")
-            raise ValueError(
-                error
-                if isinstance(error, str)
-                else "data location has no resolved address"
-            )
-        if not 0 <= address <= 0xFFFFFFFF:
-            raise ValueError("data address must be a 32-bit unsigned integer")
-
-        if "size" in value:
-            size = _integer(value.get("size"))
-            if size is None:
-                raise ValueError("data.size must be an integer")
-        else:
-            size = 4
-        if size <= 0:
-            raise ValueError("data.size must be a positive integer")
-        if address + size - 1 > 0xFFFFFFFF:
-            raise ValueError("data range exceeds the 32-bit address space")
-
-        access_value = value.get("access", "W")
-        if not isinstance(access_value, str):
-            raise ValueError("data.access must be R, W, or RW")
-        try:
-            access = DataAccess(access_value.upper())
-        except ValueError:
-            raise ValueError("data.access must be R, W, or RW") from None
-
-        output_value = value.get("output", "value")
-        if not isinstance(output_value, str):
-            raise ValueError(f"unsupported data.output value: {output_value!r}")
-        try:
-            output = DataOutput(output_value)
-        except ValueError:
-            raise ValueError(
-                f"unsupported data.output value: {output_value!r}"
-            ) from None
-
+        address = _data_address(value)
+        size = _data_size(value, address)
+        access = _data_access(value)
+        output = _data_output(value)
         match = DataMatch.from_yaml(value["match"]) if "match" in value else None
         return cls(address, size, access, output, match)
+
+
+def _data_address(value: dict[str, JsonValue]) -> int:
+    """Validate and return a data trace address."""
+
+    address = _integer(value.get("address"))
+    if address is None:
+        error = value.get("error")
+        raise ValueError(
+            error
+            if isinstance(error, str)
+            else "data location has no resolved address"
+        )
+    if not 0 <= address <= 0xFFFFFFFF:
+        raise ValueError("data address must be a 32-bit unsigned integer")
+    return address
+
+
+def _data_size(value: dict[str, JsonValue], address: int) -> int:
+    """Validate and return a data trace size."""
+
+    size = _integer(value.get("size")) if "size" in value else 4
+    if size is None:
+        raise ValueError("data.size must be an integer")
+    if size <= 0:
+        raise ValueError("data.size must be a positive integer")
+    if address + size - 1 > 0xFFFFFFFF:
+        raise ValueError("data range exceeds the 32-bit address space")
+    return size
+
+
+def _data_access(value: dict[str, JsonValue]) -> DataAccess:
+    """Validate and return a data trace access mode."""
+
+    access_value = value.get("access", "W")
+    if not isinstance(access_value, str):
+        raise ValueError("data.access must be R, W, or RW")
+    try:
+        return DataAccess(access_value.upper())
+    except ValueError:
+        raise ValueError("data.access must be R, W, or RW") from None
+
+
+def _data_output(value: dict[str, JsonValue]) -> DataOutput:
+    """Validate and return a data trace output mode."""
+
+    output_value = value.get("output", "value")
+    if not isinstance(output_value, str):
+        raise ValueError(f"unsupported data.output value: {output_value!r}")
+    try:
+        return DataOutput(output_value)
+    except ValueError:
+        raise ValueError(
+            f"unsupported data.output value: {output_value!r}"
+        ) from None
 
 
 @dataclass(frozen=True)

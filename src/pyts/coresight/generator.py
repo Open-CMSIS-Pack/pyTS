@@ -21,7 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from collections.abc import Callable
 import re
-from typing import cast
+from typing import NoReturn, cast
 
 from pyts._version import package_version
 from pyts.coresight.model import (
@@ -177,36 +177,8 @@ def generate_ctrace_run(
     if not isinstance(setups, list):
         raise ValueError("ctrace.setup must be a list")
 
-    generated: list[_GeneratedRef] = []
-    multi_processor = len(processors) > 1
-    implementations: dict[int, CoreSight | None] = {}
-    for processor in processors:
-        implementation = create_coresight(processor)
-        if (
-            isinstance(implementation, DwtV1CoreSight)
-            and _processor_has_data_match(setups, processor)
-        ):
-            implementation.reserve_data_match_pair()
-        implementations[id(processor)] = implementation
-
-    for setup in setups:
-        if not isinstance(setup, dict) or "disable" in setup:
-            continue
-        selected = _select_processors(setup, processors)
-        setup_pname = setup.get("pname")
-        prefix = setup_pname if isinstance(setup_pname, str) and setup_pname else None
-        for processor in selected:
-            ref_pname = processor.pname if multi_processor else None
-            for ref, streamed in _setup_refs(
-                setup,
-                prefix,
-                processor,
-                ref_pname,
-                implementations[id(processor)],
-            ):
-                generated.append(
-                    _GeneratedRef(ref, setup, processor, streamed)
-                )
+    implementations = _prepare_implementations(setups, processors)
+    generated = _generate_refs(setups, processors, implementations)
 
     refs = _assign_atbids(generated, setups, processors)
 
@@ -241,23 +213,100 @@ def _processor_has_data_match(
 ) -> bool:
     """Return whether a processor has a syntactically valid match request."""
 
+    return any(
+        _valid_data_match(entry)
+        for setup in setups
+        if _setup_targets_processor(setup, processor)
+        for entry in _data_entries(setup)
+    )
+
+
+def _setup_targets_processor(setup: JsonValue, processor: Processor) -> bool:
+    """Return whether a setup applies to a processor for match reservation."""
+
+    if not isinstance(setup, dict) or "disable" in setup:
+        return False
+    pname = setup.get("pname")
+    return not isinstance(pname, str) or not pname or pname == processor.pname
+
+
+def _data_entries(setup: JsonValue) -> list[JsonValue]:
+    """Return data entries in a setup as a uniform list."""
+
+    if not isinstance(setup, dict):
+        return []
+    data = setup.get("data")
+    return data if isinstance(data, list) else [data]
+
+
+def _valid_data_match(entry: JsonValue) -> bool:
+    """Return whether a data entry contains a valid match request."""
+
+    if not isinstance(entry, dict) or "match" not in entry:
+        return False
+    try:
+        DataMatch.from_yaml(entry["match"])
+    except ValueError:
+        return False
+    return True
+
+
+def _prepare_implementations(
+    setups: list[JsonValue], processors: list[Processor]
+) -> dict[int, CoreSight | None]:
+    """Create CoreSight implementations and reserve match comparators."""
+
+    implementations: dict[int, CoreSight | None] = {}
+    for processor in processors:
+        implementation = create_coresight(processor)
+        if isinstance(implementation, DwtV1CoreSight) and _processor_has_data_match(
+            setups, processor
+        ):
+            implementation.reserve_data_match_pair()
+        implementations[id(processor)] = implementation
+    return implementations
+
+
+def _generate_refs(
+    setups: list[JsonValue],
+    processors: list[Processor],
+    implementations: dict[int, CoreSight | None],
+) -> list[_GeneratedRef]:
+    """Generate references for every enabled setup and selected processor."""
+
+    generated: list[_GeneratedRef] = []
+    multi_processor = len(processors) > 1
     for setup in setups:
         if not isinstance(setup, dict) or "disable" in setup:
             continue
-        pname = setup.get("pname")
-        if isinstance(pname, str) and pname and pname != processor.pname:
-            continue
-        data = setup.get("data")
-        entries = data if isinstance(data, list) else [data]
-        for entry in entries:
-            if not isinstance(entry, dict) or "match" not in entry:
-                continue
-            try:
-                DataMatch.from_yaml(entry["match"])
-            except ValueError:
-                continue
-            return True
-    return False
+        selected = _select_processors(setup, processors)
+        setup_pname = setup.get("pname")
+        prefix = setup_pname if isinstance(setup_pname, str) and setup_pname else None
+        for processor in selected:
+            ref_pname = processor.pname if multi_processor else None
+            generated.extend(
+                _generated_setup_refs(
+                    setup, prefix, processor, ref_pname, implementations
+                )
+            )
+    return generated
+
+
+def _generated_setup_refs(
+    setup: YamlMapping,
+    prefix: str | None,
+    processor: Processor,
+    ref_pname: str | None,
+    implementations: dict[int, CoreSight | None],
+) -> list[_GeneratedRef]:
+    """Generate and wrap all references for one setup/processor pair."""
+
+    return [
+        _GeneratedRef(ref, setup, processor, streamed)
+        for ref, streamed in _setup_refs(
+            setup, prefix, processor, ref_pname, implementations[id(processor)]
+        )
+    ]
 
 
 def _setup_refs(
@@ -317,40 +366,65 @@ def _feature_ref(
 ) -> tuple[YamlMapping, bool]:
     """Build one feature reference, embedding generation failures as errors."""
 
-    ref: YamlMapping = {"ctrace-ref": ref_name, "type": _feature_type(feature)}
-    if ref_pname is not None:
-        ref["pname"] = ref_pname
-    if feature == "data" and isinstance(value, dict):
-        for property_name in (
-            "symbol",
-            "symbol-file",
-            "symbol-size",
-            "symbol-type",
-            "label",
-        ):
-            if property_name in value:
-                ref[property_name] = value[property_name]
+    ref = _initial_feature_ref(feature, ref_name, ref_pname)
+    _copy_data_metadata(ref, feature, value)
     if coresight is None:
         ref["error"] = f"core {processor.core} has no architectural ITM/DWT trace support"
         return ref, False
 
-    try:
-        regs = _feature_regs(
-            feature,
-            value,
-            coresight,
-        )
-    except ValueError as error:
+    regs, error = _feature_registers(feature, value, coresight)
+    if error is not None:
         ref["error"] = str(error)
         return ref, False
 
-    if feature == "data" and isinstance(value, dict):
-        symbol_file = value.get("symbol-file")
-        address = _integer(value.get("address"))
-        if isinstance(symbol_file, str):
-            ref["symbol-file"] = symbol_file
-        if address is not None:
-            ref["symbol-address"] = HexInt(address)
+    return _complete_feature_ref(ref, feature, regs)
+
+
+def _initial_feature_ref(
+    feature: str, ref_name: str, ref_pname: str | None
+) -> YamlMapping:
+    """Create the common metadata for a generated feature reference."""
+
+    ref: YamlMapping = {"ctrace-ref": ref_name, "type": _feature_type(feature)}
+    if ref_pname is not None:
+        ref["pname"] = ref_pname
+    return ref
+
+
+def _copy_data_metadata(
+    ref: YamlMapping, feature: str, value: JsonValue
+) -> None:
+    """Copy source-location metadata from a data feature."""
+
+    if feature != "data" or not isinstance(value, dict):
+        return
+    for property_name in ("symbol", "symbol-file", "symbol-size", "symbol-type", "label"):
+        if property_name in value:
+            ref[property_name] = value[property_name]
+    symbol_file = value.get("symbol-file")
+    address = _integer(value.get("address"))
+    if isinstance(symbol_file, str):
+        ref["symbol-file"] = symbol_file
+    if address is not None:
+        ref["symbol-address"] = HexInt(address)
+
+
+def _feature_registers(
+    feature: str, value: JsonValue, coresight: CoreSight
+) -> tuple[list[YamlMapping], ValueError | None]:
+    """Generate feature registers while converting validation failures."""
+
+    try:
+        return _feature_regs(feature, value, coresight), None
+    except ValueError as error:
+        return [], error
+
+
+def _complete_feature_ref(
+    ref: YamlMapping, feature: str, regs: list[YamlMapping]
+) -> tuple[YamlMapping, bool]:
+    """Attach registers and stream metadata to a feature reference."""
+
     if regs:
         ref["regs"] = cast(JsonValue, regs)
     if ref["type"] == "dwt":
@@ -370,6 +444,28 @@ def _assign_atbids(
 ) -> list[YamlMapping]:
     """Assign unique processor ATBIDs and annotate streamed references."""
 
+    setup_targets, reserved = _collect_atbid_constraints(setups, processors)
+    streamed = [item for item in generated if item.streamed]
+    processor_ids = _explicit_processor_atbids(streamed, setup_targets)
+    _assign_available_atbids(
+        streamed, processors, reserved, processor_ids
+    )
+    implicit_itm_refs = _annotate_streamed_refs(
+        streamed, generated, processor_ids
+    )
+    refs = [item.ref for item in generated]
+    _append_implicit_itm_refs(
+        refs, implicit_itm_refs, processors, processor_ids
+    )
+    refs.sort(key=_ref_sort_key)
+    return refs
+
+
+def _collect_atbid_constraints(
+    setups: list[JsonValue], processors: list[Processor]
+) -> tuple[dict[int, list[Processor]], set[int]]:
+    """Collect setup targets and validate explicitly reserved ATBIDs."""
+
     setup_targets: dict[int, list[Processor]] = {}
     reserved: set[int] = set()
     owners: dict[int, set[Processor]] = {}
@@ -383,18 +479,29 @@ def _assign_atbids(
             continue
         reserved.add(atbid)
         owners.setdefault(atbid, set()).update(targets)
-
     for atbid, atbid_owners in owners.items():
         if len(atbid_owners) > 1:
-            names = ", ".join(
-                processor.pname or processor.core
-                for processor in atbid_owners
-            )
-            raise ValueError(
-                f"itm.atbid {atbid} is used by multiple processors: {names}"
-            )
+            _raise_atbid_owner_conflict(atbid, atbid_owners)
+    return setup_targets, reserved
 
-    streamed = [item for item in generated if item.streamed]
+
+def _raise_atbid_owner_conflict(
+    atbid: int, owners: set[Processor]
+) -> NoReturn:
+    """Raise for an ATBID explicitly assigned to multiple processors."""
+
+    names = ", ".join(
+        processor.pname or processor.core for processor in owners
+    )
+    raise ValueError(f"itm.atbid {atbid} is used by multiple processors: {names}")
+
+
+def _explicit_processor_atbids(
+    streamed: list[_GeneratedRef],
+    setup_targets: dict[int, list[Processor]],
+) -> dict[Processor, int]:
+    """Collect and validate explicit ATBIDs used by streamed references."""
+
     processor_ids: dict[Processor, int] = {}
     for item in streamed:
         targets = setup_targets[id(item.setup)]
@@ -413,6 +520,16 @@ def _assign_atbids(
                 f"processor {processor.pname or processor.core!r} has "
                 "conflicting itm.atbid values"
             )
+    return processor_ids
+
+
+def _assign_available_atbids(
+    streamed: list[_GeneratedRef],
+    processors: list[Processor],
+    reserved: set[int],
+    processor_ids: dict[Processor, int],
+) -> None:
+    """Assign the smallest available ATBID to each streamed processor."""
 
     next_atbid = 1
     streamed_processors = {item.processor for item in streamed}
@@ -435,6 +552,14 @@ def _assign_atbids(
         reserved.add(next_atbid)
         next_atbid += 1
 
+
+def _annotate_streamed_refs(
+    streamed: list[_GeneratedRef],
+    generated: list[_GeneratedRef],
+    processor_ids: dict[Processor, int],
+) -> dict[Processor, YamlMapping]:
+    """Annotate streamed references and collect implicit ITM setups."""
+
     implicit_itm_refs: dict[Processor, YamlMapping] = {}
     explicit_itm_processors = {
         item.processor
@@ -454,8 +579,17 @@ def _assign_atbids(
         _set_setup_atbid(item.setup, atbid)
         _set_itm_trace_bus_id(item.ref, atbid)
         item.ref["stream"] = atbid
+    return implicit_itm_refs
 
-    refs = [item.ref for item in generated]
+
+def _append_implicit_itm_refs(
+    refs: list[YamlMapping],
+    implicit_itm_refs: dict[Processor, YamlMapping],
+    processors: list[Processor],
+    processor_ids: dict[Processor, int],
+) -> None:
+    """Add generated ITM references for setups without explicit ITM data."""
+
     for processor, setup in implicit_itm_refs.items():
         ref: YamlMapping = {"ctrace-ref": "itm", "type": "itm"}
         if len(processors) > 1:
@@ -470,8 +604,6 @@ def _assign_atbids(
         )
         ref["stream"] = processor_ids[processor]
         refs.append(ref)
-    refs.sort(key=_ref_sort_key)
-    return refs
 
 
 def _ref_sort_key(ref: YamlMapping) -> tuple[object, ...]:
