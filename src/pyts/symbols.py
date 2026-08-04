@@ -156,24 +156,44 @@ class SymbolCatalog:
                 break
             opened = self.open(symbol_file)
             matches = opened.resolver.resolve_object_members_by_address(remaining)
-            grouped: dict[tuple[int, int], list[MemberInfo]] = {
-                member: [] for member in remaining
-            }
-            for match in matches:
-                key = (match.address, match.size)
-                if key in grouped:
-                    grouped[key].append(match)
-            for key, matches_for_key in grouped.items():
-                if len(matches_for_key) == 1:
-                    resolved[key] = matches_for_key[0]
-                elif len(matches_for_key) > 1:
-                    ambiguous.add(key)
+            grouped = self._group_member_matches(remaining, matches)
+            self._record_member_matches(grouped, resolved, ambiguous)
             remaining = [
                 key
                 for key in remaining
                 if key not in resolved and key not in ambiguous
             ]
         return resolved, ambiguous
+
+    @staticmethod
+    def _group_member_matches(
+        remaining: list[tuple[int, int]],
+        matches: Iterable[MemberInfo],
+    ) -> dict[tuple[int, int], list[MemberInfo]]:
+        """Group resolver matches by the requested address and size."""
+
+        grouped: dict[tuple[int, int], list[MemberInfo]] = {
+            member: [] for member in remaining
+        }
+        for match in matches:
+            key = (match.address, match.size)
+            if key in grouped:
+                grouped[key].append(match)
+        return grouped
+
+    @staticmethod
+    def _record_member_matches(
+        grouped: dict[tuple[int, int], list[MemberInfo]],
+        resolved: dict[tuple[int, int], MemberInfo],
+        ambiguous: set[tuple[int, int]],
+    ) -> None:
+        """Record unique matches and mark address pairs with ambiguity."""
+
+        for key, matches in grouped.items():
+            if len(matches) == 1:
+                resolved[key] = matches[0]
+            elif len(matches) > 1:
+                ambiguous.add(key)
 
     def resolve_addresses(
         self,

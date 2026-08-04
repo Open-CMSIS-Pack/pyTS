@@ -595,6 +595,7 @@ def test_setup_trace_generates_coresight_register_settings(
         {"name": "ITM_TPR", "value": 1, "mask": 0xF},
         {"name": "ITM_TCR", "value": 0x10001, "mask": 0x7F0001},
     ]
+    assert refs_by_name["itm"]["source"] == [0, 1, 2, 3]
     assert refs_by_name["synchronization#0"]["regs"] == [
         {"name": "DWT_CTRL", "value": 1 << 10, "mask": 0xC00},
         {"name": "ITM_TCR", "value": 5, "mask": 5},
@@ -681,6 +682,7 @@ def test_setup_trace_scopes_refs_and_reports_unsupported_core(
             "ctrace-ref": "application/itm",
             "type": "itm",
             "pname": "application",
+            "source": [0],
             "regs": [
                 {"name": "ITM_TER0", "value": 1},
                 {"name": "ITM_TPR", "value": 0, "mask": 0xF},

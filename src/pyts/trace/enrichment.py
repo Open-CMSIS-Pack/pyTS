@@ -61,57 +61,80 @@ def enrich_legacy_refs(
     """Add resolved metadata to legacy symbol and address entries in place."""
 
     for ref in entries:
-        item = ref.value
-        symbol_name = item.get("symbol")
-        if isinstance(symbol_name, str) and symbol_name:
-            symbol = resolved.get(symbol_name)
-            description = f"symbol {symbol_name!r}"
-        else:
-            address = manual_address(item)
-            if address is None:
-                continue
-            size = manual_size(item)
-            description = f"address 0x{address:x}"
-            if size is not None and (address, size) in ambiguous_members:
-                warn_ambiguous_member(description, size)
-                continue
-            symbol = resolved_address_symbol(
-                address,
-                size,
-                resolved_members_by_address,
-                resolved_by_address,
-            )
+        symbol, description = _resolve_legacy_ref(
+            ref.value,
+            resolved,
+            resolved_members_by_address,
+            ambiguous_members,
+            resolved_by_address,
+        )
         if symbol is None:
             continue
+        _enrich_legacy_ref(ref.value, description, symbol)
+
+
+def _resolve_legacy_ref(
+    item: YamlMapping,
+    resolved: dict[str, SymbolInfo | MemberInfo],
+    resolved_members_by_address: dict[tuple[int, int], MemberInfo],
+    ambiguous_members: set[tuple[int, int]],
+    resolved_by_address: dict[int, SymbolInfo | MemberInfo],
+) -> tuple[SymbolInfo | MemberInfo | None, str]:
+    """Select resolved metadata for one legacy symbol or address entry."""
+
+    symbol_name = item.get("symbol")
+    if isinstance(symbol_name, str) and symbol_name:
+        return resolved.get(symbol_name), f"symbol {symbol_name!r}"
+    address = manual_address(item)
+    if address is None:
+        return None, ""
+    size = manual_size(item)
+    description = f"address 0x{address:x}"
+    if size is not None and (address, size) in ambiguous_members:
+        warn_ambiguous_member(description, size)
+        return None, description
+    return (
+        resolved_address_symbol(
+            address, size, resolved_members_by_address, resolved_by_address
+        ),
+        description,
+    )
+
+
+def _enrich_legacy_ref(
+    item: YamlMapping, description: str, symbol: SymbolInfo | MemberInfo
+) -> None:
+    """Enrich all available metadata fields for one legacy reference."""
+
+    enrich_property(
+        item,
+        description,
+        "symbol",
+        symbol.name,
+        symbol_is_consistent(item.get("symbol"), symbol),
+    )
+    enrich_property(
+        item,
+        description,
+        "address",
+        symbol.address_hex,
+        address_is_consistent(item.get("address"), symbol),
+    )
+    enrich_property(
+        item,
+        description,
+        "symbol-size",
+        symbol.size,
+        size_is_consistent(item.get("symbol-size"), symbol),
+    )
+    if symbol.type:
         enrich_property(
             item,
             description,
-            "symbol",
-            symbol.name,
-            symbol_is_consistent(item.get("symbol"), symbol),
+            "symbol-type",
+            symbol.type,
+            type_is_consistent(item.get("symbol-type"), symbol),
         )
-        enrich_property(
-            item,
-            description,
-            "address",
-            symbol.address_hex,
-            address_is_consistent(item.get("address"), symbol),
-        )
-        enrich_property(
-            item,
-            description,
-            "symbol-size",
-            symbol.size,
-            size_is_consistent(item.get("symbol-size"), symbol),
-        )
-        if symbol.type:
-            enrich_property(
-                item,
-                description,
-                "symbol-type",
-                symbol.type,
-                type_is_consistent(item.get("symbol-type"), symbol),
-            )
 
 
 def enrich_location_refs(
