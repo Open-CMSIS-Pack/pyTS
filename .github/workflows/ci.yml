@@ -8,6 +8,9 @@ on:
     branches:
       - main
   workflow_dispatch:
+  release:
+    types:
+      - published
 
 permissions:
   contents: read
@@ -33,6 +36,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -46,6 +51,13 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install '.[installer]'
 
+      - name: Determine package version
+        id: version
+        shell: bash
+        run: |
+          version=$(python -c 'from importlib.metadata import version; print(version("pyts"))')
+          echo "VERSION=$version" >> "$GITHUB_OUTPUT"
+
       - name: Build package
         run: python -m build
 
@@ -56,14 +68,18 @@ jobs:
         id: archive
         working-directory: dist
         shell: bash
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
+          archive_prefix="pyTS-${PACKAGE_VERSION}"
           if [[ "${{ matrix.os }}" == "windows" ]]; then
-            7z a pyTS-${{ matrix.os }}-${{ matrix.arch }}.zip pyTS.exe
-            echo "ARCHIVE=pyTS-${{ matrix.os }}-${{ matrix.arch }}.zip" >> $GITHUB_OUTPUT
+            archive="${archive_prefix}-${{ matrix.os }}-${{ matrix.arch }}.zip"
+            7z a "$archive" pyTS.exe
           else
-            tar -czf pyTS-${{ matrix.os }}-${{ matrix.arch }}.tar.gz pyTS
-            echo "ARCHIVE=pyTS-${{ matrix.os }}-${{ matrix.arch }}.tar.gz" >> $GITHUB_OUTPUT
+            archive="${archive_prefix}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz"
+            tar -czf "$archive" pyTS
           fi
+          echo "ARCHIVE=$archive" >> "$GITHUB_OUTPUT"
 
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -124,3 +140,24 @@ jobs:
 
       - name: Run mypy
         run: python -m mypy
+
+  release:
+    name: Attach executables to GitHub release
+    if: github.event_name == 'release'
+    needs: [build, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: release-assets
+          pattern: pyTS-*
+          merge-multiple: true
+
+      - name: Upload executables to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" release-assets/* --clobber
