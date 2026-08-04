@@ -23,7 +23,7 @@ from pathlib import Path
 
 from pyts.domain import EntryPath, EntryRef, YamlMapping
 from pyts.elf import ElfResolver, MemberInfo, SymbolInfo
-from pyts.symbols import OpenSymbolFile, SymbolCatalog
+from pyts.symbols import OpenSymbolFile, SymbolCatalog, SymbolFile
 from pyts.trace.enrichment import manual_size, warn_ambiguous_location
 from pyts.trace.model import LocationSpec, ResolvedLocation, normalize_alias
 
@@ -39,52 +39,75 @@ def resolve_locations(
     errors: dict[EntryPath, str] = {}
     pnames = pnames_by_path or {}
     for ref in entries:
-        entry = ref.value
-        pname = pnames.get(ref.path)
-        location = LocationSpec.from_yaml(entry["location"])
-        if location is None:
-            continue
-        if location.address is not None:
-            match = resolve_fixed_address(catalog, location.address, entry, pname)
-            if match is not None:
-                resolved[ref.path] = match
-            continue
-        qualifier = (
-            normalize_alias(location.qualifier)
-            if location.qualifier is not None
-            else None
+        result, error = _resolve_location_ref(
+            catalog, ref, pnames.get(ref.path)
         )
-        candidates = catalog.candidates(qualifier, pname=pname)
-        if not candidates:
-            errors[ref.path] = unresolved_qualifier_error(location, pname)
-            continue
-        opened: list[OpenSymbolFile] = []
-        for candidate in candidates:
-            try:
-                opened.append(catalog.open(candidate))
-            except FileNotFoundError:
-                errors[ref.path] = (
-                    "ELF file does not exist: "
-                    f"{candidate.path.resolve(strict=False)}"
-                )
-                break
-        if ref.path in errors:
-            continue
-        source_error = source_file_error(location, opened)
-        if source_error is not None:
-            errors[ref.path] = source_error
-            continue
-        matches = resolve_location_from_candidates(location, opened, entry)
-        if len(matches) == 1:
-            resolved[ref.path] = matches[0]
-        elif len(matches) > 1:
-            errors[ref.path] = (
-                f"location matches multiple symbols: {location.original}"
-            )
-            warn_ambiguous_location(location.original)
-        else:
-            errors[ref.path] = not_found_error(location)
+        if result is not None:
+            resolved[ref.path] = result
+        if error is not None:
+            errors[ref.path] = error
     return resolved, errors
+
+
+def _resolve_location_ref(
+    catalog: SymbolCatalog,
+    ref: EntryRef,
+    pname: str | None,
+) -> tuple[ResolvedLocation | None, str | None]:
+    """Resolve one location reference and return its result or error."""
+
+    entry = ref.value
+    location = LocationSpec.from_yaml(entry["location"])
+    if location is None:
+        return None, None
+    if location.address is not None:
+        return resolve_fixed_address(catalog, location.address, entry, pname), None
+    candidates = catalog.candidates(
+        normalize_alias(location.qualifier)
+        if location.qualifier is not None
+        else None,
+        pname=pname,
+    )
+    if not candidates:
+        return None, unresolved_qualifier_error(location, pname)
+    opened, open_error = _open_location_candidates(catalog, candidates)
+    if open_error is not None:
+        return None, open_error
+    source_error = source_file_error(location, opened)
+    if source_error is not None:
+        return None, source_error
+    return _resolve_location_matches(location, opened, entry)
+
+
+def _open_location_candidates(
+    catalog: SymbolCatalog, candidates: Iterable[SymbolFile]
+) -> tuple[list[OpenSymbolFile], str | None]:
+    """Open location candidates, reporting a missing ELF path."""
+
+    opened: list[OpenSymbolFile] = []
+    for candidate in candidates:
+        try:
+            opened.append(catalog.open(candidate))
+        except FileNotFoundError:
+            path = candidate.path.resolve(strict=False)
+            return [], f"ELF file does not exist: {path}"
+    return opened, None
+
+
+def _resolve_location_matches(
+    location: LocationSpec,
+    candidates: list[OpenSymbolFile],
+    entry: YamlMapping,
+) -> tuple[ResolvedLocation | None, str | None]:
+    """Classify zero, one, or multiple location matches."""
+
+    matches = resolve_location_from_candidates(location, candidates, entry)
+    if len(matches) == 1:
+        return matches[0], None
+    if len(matches) > 1:
+        warn_ambiguous_location(location.original)
+        return None, f"location matches multiple symbols: {location.original}"
+    return None, not_found_error(location)
 
 
 def resolve_fixed_address(
