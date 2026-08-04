@@ -431,6 +431,10 @@ def _complete_feature_ref(
         source = _dwt_source(regs)
         if source is not None:
             ref["source"] = cast(JsonValue, source)
+    if feature == "itm":
+        source = _itm_source(value)
+        if len(source) > 0:
+            ref["source"] = cast(JsonValue, source)
     streamed = bool(regs) and (
         _FEATURE_SPECS[feature].streamed or _regs_enable_itm(regs)
     )
@@ -743,6 +747,15 @@ def _itm_regs(value: JsonValue) -> list[YamlMapping]:
         _reg("ITM_TPR", privileged, 0xF),
         _reg("ITM_TCR", 1, 1),
     ]
+
+
+def _itm_source(value: JsonValue) -> list[int]:
+    """Return enabled ITM stimulus-port IDs from the enable bitfield."""
+
+    if not isinstance(value, dict):
+        raise ValueError("itm must be a mapping")
+    enable = _required_u32(value.get("enable"), "itm.enable")
+    return [index for index in range(32) if enable & (1 << index)]
 
 
 def _timestamp_regs(value: JsonValue) -> list[YamlMapping]:
