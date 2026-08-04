@@ -106,15 +106,35 @@ def _enrich_legacy_ref(
 ) -> None:
     """Enrich all available metadata fields for one legacy reference."""
 
-    enrich_property(item, description, "symbol", symbol.name,
-                    symbol_is_consistent(item.get("symbol"), symbol))
-    enrich_property(item, description, "address", symbol.address_hex,
-                    address_is_consistent(item.get("address"), symbol))
-    enrich_property(item, description, "symbol-size", symbol.size,
-                    size_is_consistent(item.get("symbol-size"), symbol))
+    enrich_property(
+        item,
+        description,
+        "symbol",
+        symbol.name,
+        symbol_is_consistent(item.get("symbol"), symbol),
+    )
+    enrich_property(
+        item,
+        description,
+        "address",
+        symbol.address_hex,
+        address_is_consistent(item.get("address"), symbol),
+    )
+    enrich_property(
+        item,
+        description,
+        "symbol-size",
+        symbol.size,
+        size_is_consistent(item.get("symbol-size"), symbol),
+    )
     if symbol.type:
-        enrich_property(item, description, "symbol-type", symbol.type,
-                        type_is_consistent(item.get("symbol-type"), symbol))
+        enrich_property(
+            item,
+            description,
+            "symbol-type",
+            symbol.type,
+            type_is_consistent(item.get("symbol-type"), symbol),
+        )
 
 
 def enrich_location_refs(

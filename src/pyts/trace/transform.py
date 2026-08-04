@@ -200,8 +200,14 @@ def _process_legacy_refs(
         scoped_symbols = [ref for ref in refs if ref.path in symbol_paths]
         scoped_addresses = [ref for ref in refs if ref.path not in symbol_paths]
         _process_legacy_scope(
-            catalog, pname, refs, scoped_symbols, scoped_addresses,
-            has_locations, missing, resolved_names
+            catalog,
+            pname,
+            refs,
+            scoped_symbols,
+            scoped_addresses,
+            has_locations,
+            missing,
+            resolved_names,
         )
     return missing, resolved_names
 
