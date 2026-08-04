@@ -98,7 +98,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install '.[lint]'
+          python -m pip install -e '.[lint]'
 
       - name: Run tests
         run: python -m pytest -q --cov=pyts --cov-report=xml:coverage.xml --cov-report=html:coverage-html
@@ -116,7 +116,7 @@ jobs:
         with:
           token: ${{ secrets.QLTY_COVERAGE_TOKEN }}
           files: coverage.xml
-          add-prefix: src/pyts
+          strip-prefix: ${{ github.workspace }}/
           skip-errors: false
 
       - name: Run Pyright
