@@ -25,3 +25,34 @@ The test and type-checking configuration is defined in `pyproject.toml` and
 ```sh
 python -m pip install -e '.[test,typecheck]'
 ```
+
+## Coverage and Qlty
+
+- Install the test package in editable mode before generating coverage so the
+  report references the checked-out `src/pyts` files:
+
+  ```sh
+  python -m pip install -e '.[lint]'
+  ```
+
+- Generate the XML and HTML reports with:
+
+  ```sh
+  python -m pytest -q --cov=src/pyts \
+    --cov-report=xml:coverage.xml \
+    --cov-report=html:coverage-html
+  ```
+
+- Qlty coverage uses `add-prefix: src/pyts` because Cobertura filenames are
+  relative to the package source directory. Do not replace it with a
+  workspace `strip-prefix` unless the coverage report contains absolute
+  workspace paths.
+- Check changed-line coverage with `diff-cover` against `origin/main` and
+  require 100% coverage for newly added executable lines:
+
+  ```sh
+  diff-cover coverage.xml --compare-branch=origin/main --fail-under=100
+  ```
+
+- Fetch full Git history before running `diff-cover` so `origin/main` is
+  available for comparison.

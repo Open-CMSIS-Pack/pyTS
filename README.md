@@ -1,3 +1,6 @@
+[![Maintainability](https://qlty.sh/badges/ad8ffd83-bf17-42f6-9c06-7df734a3ee74/maintainability.svg)](https://qlty.sh/gh/Open-CMSIS-Pack/projects/pyTS)
+[![Code Coverage](https://qlty.sh/badges/ad8ffd83-bf17-42f6-9c06-7df734a3ee74/coverage.svg)](https://qlty.sh/gh/Open-CMSIS-Pack/projects/pyTS)
+
 # pyTS
 
 Python Trace Setup utility complementing pyOCD for CMSIS Debug integration
