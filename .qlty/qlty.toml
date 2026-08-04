@@ -1,0 +1,74 @@
+# Configuration version for compatibility with the tool
+config_version = "0"
+
+# Glob patterns to exclude from analysis
+exclude_patterns = [
+    "scripts/",
+    ".github/",
+    "tests/",
+    "**/__pycache__/",
+    "**/*.egg-info/",
+    "build/",
+    "dist/",
+]
+
+# Glob patterns to identify Python test files
+test_patterns = [
+    "tests/**/*.py",
+    "**/test_*.py",
+    "**/*_test.py",
+]
+
+# === Smells Configuration ===
+[smells]
+mode = "comment"
+
+# === Source Configuration ===
+[[source]]
+name = "default"
+default = true
+
+# === Individual Code Smell Toggles ===
+[smells.similar_code]
+enabled = true
+
+[smells.duplication]
+enabled = true
+
+[smells.identical_code]
+enabled = true
+
+[smells.function_parameters]
+enabled = false
+
+[smells.nested_control_flow]
+enabled = false
+
+[smells.file_complexity]
+enabled = false
+
+[smells.function_complexity]
+enabled = false
+
+[smells.return_statements]
+enabled = false
+
+[smells.boolean_logic]
+enabled = false
+
+# === Plugins Section ===
+[[plugin]]
+name = "actionlint"
+
+[[plugin]]
+name = "osv-scanner"
+
+[[plugin]]
+name = "ripgrep"
+
+[[plugin]]
+name = "trivy"
+version = "0.69.3"
+
+[[plugin]]
+name = "trufflehog"

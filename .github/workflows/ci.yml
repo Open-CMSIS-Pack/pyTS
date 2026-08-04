@@ -101,7 +101,16 @@ jobs:
           python -m pip install '.[lint]'
 
       - name: Run tests
-        run: python -m pytest -q
+        run: python -m pytest -q --cov=src/pyts --cov-report=xml:coverage.xml
+
+      - name: Publish coverage report to QLTY
+        if: matrix.python-version == '3.12'
+        uses: qltysh/qlty-action/coverage@08a0a862c159eae9b9003081da6663d96efef637 # v1
+        with:
+          token: ${{ secrets.QLTY_COVERAGE_TOKEN }}
+          files: coverage.xml
+          add-prefix: src/pyts
+          skip-errors: false
 
       - name: Run Pyright
         run: python -m pyright
