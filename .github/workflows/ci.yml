@@ -116,7 +116,7 @@ jobs:
         with:
           token: ${{ secrets.QLTY_COVERAGE_TOKEN }}
           files: coverage.xml
-          strip-prefix: ${{ github.workspace }}/
+          add-prefix: src/pyts
           skip-errors: false
 
       - name: Run Pyright
