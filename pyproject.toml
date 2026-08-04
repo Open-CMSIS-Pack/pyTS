@@ -39,6 +39,7 @@ typecheck = [
   "types-PyYAML>=6.0.12.20260724",
 ]
 lint = [
+  "diff-cover>=9.7.1",
   "mypy>=2.3.0",
   "pyright>=1.1.411",
   "pytest>=9.1.1",
