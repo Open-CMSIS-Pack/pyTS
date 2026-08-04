@@ -32,9 +32,6 @@ default = true
 [smells.similar_code]
 enabled = true
 
-[smells.duplication]
-enabled = true
-
 [smells.identical_code]
 enabled = true
 
@@ -61,7 +58,13 @@ enabled = false
 name = "actionlint"
 
 [[plugin]]
+name = "bandit"
+
+[[plugin]]
 name = "osv-scanner"
+
+[[plugin]]
+name = "radarlint-python"
 
 [[plugin]]
 name = "ripgrep"
@@ -72,3 +75,6 @@ version = "0.69.3"
 
 [[plugin]]
 name = "trufflehog"
+
+[[plugin]]
+name = "zizmor"

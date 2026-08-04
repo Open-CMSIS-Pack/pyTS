@@ -101,7 +101,7 @@ jobs:
           python -m pip install '.[lint]'
 
       - name: Run tests
-        run: python -m pytest -q --cov=pyts --cov-report=xml:coverage.xml --cov-report=html:coverage-html
+        run: python -m pytest -q --cov=src/pyts --cov-report=xml:coverage.xml --cov-report=html:coverage-html
 
       - name: Upload HTML coverage report
         if: matrix.python-version == '3.12'
@@ -112,7 +112,7 @@ jobs:
 
       - name: Publish coverage report to QLTY
         if: matrix.python-version == '3.12'
-        uses: qltysh/qlty-action/coverage@08a0a862c159eae9b9003081da6663d96efef637 # v1
+        uses: qltysh/qlty-action/coverage@08a0a862c159eae9b9003081da6663d96efef637 # v2.3.0
         with:
           token: ${{ secrets.QLTY_COVERAGE_TOKEN }}
           files: coverage.xml
