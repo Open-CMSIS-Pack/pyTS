@@ -21,6 +21,7 @@ from __future__ import annotations
 import re
 import subprocess
 from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 
 
 _DESCRIBE_PATTERN = re.compile(
@@ -29,6 +30,20 @@ _DESCRIBE_PATTERN = re.compile(
 )
 _COMMIT_PATTERN = re.compile(r"^(?P<commit>[0-9a-f]+)(?P<dirty>-dirty)?$")
 _VERSION_TAG_PATTERN = "v*"
+
+
+def _repository_root() -> Path:
+    """Find the checkout containing this source, or the current checkout."""
+
+    source_root = Path(__file__).resolve().parents[2]
+    if (source_root / ".git").exists():
+        return source_root
+
+    current = Path.cwd().resolve()
+    for parent in (current, *current.parents):
+        if (parent / ".git").exists():
+            return parent
+    return source_root
 
 
 def source_version() -> str:
@@ -49,7 +64,7 @@ def source_version() -> str:
             ],
             capture_output=True,
             check=True,
-            cwd=None,
+            cwd=_repository_root(),
             text=True,
         ).stdout.strip()
     except (OSError, subprocess.CalledProcessError):

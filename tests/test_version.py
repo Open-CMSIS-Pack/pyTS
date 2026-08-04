@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -38,9 +39,11 @@ def test_source_version_uses_git_describe(
     expected: str,
 ) -> None:
     command: list[object] = []
+    working_directory: list[object] = []
 
     def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
         command.extend(cast(list[object], args[0]))
+        working_directory.append(kwargs["cwd"])
         return subprocess.CompletedProcess(["git"], 0, stdout=description, stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -57,6 +60,7 @@ def test_source_version_uses_git_describe(
         "--dirty",
         "--abbrev=7",
     ]
+    assert working_directory == [Path(__file__).resolve().parents[1]]
 
 
 def test_source_version_falls_back_without_git(monkeypatch: pytest.MonkeyPatch) -> None:
