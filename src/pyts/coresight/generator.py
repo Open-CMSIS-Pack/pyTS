@@ -790,13 +790,13 @@ def _event_regs(value: JsonValue) -> list[YamlMapping]:
 
 
 def _synchronization_regs(value: JsonValue) -> list[YamlMapping]:
-    """Generate DWT synchronization configuration writes."""
+    """Generate synchronization configuration writes (currently supports optional DWT)."""
 
     if not isinstance(value, dict):
-        raise ValueError("synchronization must be an object")
+        raise ValueError("synchronization must be a mapping")
     if "DWT" not in value:
         if value:
-            raise ValueError("synchronization object only supports DWT")
+            raise ValueError("synchronization mapping only supports the 'DWT' key")
         return []
     dwt = value["DWT"]
     if isinstance(dwt, bool):
