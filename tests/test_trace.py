@@ -596,7 +596,7 @@ def test_setup_trace_generates_coresight_register_settings(
     assert "exceptions: null" not in output_text
 
 
-def test_generate_ctrace_run_uses_original_setup_and_enriched_refs() -> None:
+def test_generate_ctrace_run_uses_original_setup_when_provided() -> None:
     setup: list[Any] = [
         {
             "disable": True,
