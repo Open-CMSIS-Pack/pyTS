@@ -26,8 +26,9 @@ from typing import Any, TextIO
 
 from elftools.common.exceptions import ELFError
 
-from pyts.trace import setup_trace
+from pyts._version import package_version
 from pyts.errors import TraceSetupError
+from pyts.trace import setup_trace
 from pyts.yaml_io import write_yaml_stream
 
 
@@ -75,6 +76,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pyts",
         description="Generate a CMSIS trace run configuration.",
+    )
+    parser.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version="%(prog)s " + package_version(),
     )
     parser.add_argument(
         "cbuild_run",

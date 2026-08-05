@@ -1,10 +1,13 @@
 [build-system]
-requires = ["hatchling>=1.31.0"]
+requires = [
+  "hatchling>=1.31.0",
+  "hatch-vcs>=0.5.0",
+]
 build-backend = "hatchling.build"
 
 [project]
 name = "pyts"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Python Trace Setup utility complementing pyOCD for CMSIS Debug integration"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -63,6 +66,24 @@ Issues = "https://github.com/Open-CMSIS-Pack/pyTS/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pyts"]
+
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.0.0"
+
+[tool.hatch.version.raw-options]
+local_scheme = "node-and-date"
+git_describe_command = [
+  "git",
+  "describe",
+  "--tags",
+  "--long",
+  "--match",
+  "v*",
+  "--always",
+  "--dirty",
+  "--abbrev=7",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

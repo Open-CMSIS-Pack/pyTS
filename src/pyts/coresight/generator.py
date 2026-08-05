@@ -377,7 +377,7 @@ def _feature_ref(
         ref["error"] = str(error)
         return ref, False
 
-    return _complete_feature_ref(ref, feature, regs)
+    return _complete_feature_ref(ref, feature, regs, value)
 
 
 def _initial_feature_ref(
@@ -421,7 +421,7 @@ def _feature_registers(
 
 
 def _complete_feature_ref(
-    ref: YamlMapping, feature: str, regs: list[YamlMapping]
+    ref: YamlMapping, feature: str, regs: list[YamlMapping], value: JsonValue
 ) -> tuple[YamlMapping, bool]:
     """Attach registers and stream metadata to a feature reference."""
 
