@@ -537,23 +537,7 @@ def test_setup_trace_generates_coresight_register_settings(
     output = read_yaml(output_path)
     run = output["ctrace-run"]
     assert set(run) == {"generated-by", "ctrace-setup", "ctrace-refs"}
-    assert run["ctrace-setup"][0]["itm"]["atbid"] == 1
-    assert run["ctrace-setup"][0]["itm"]["enable"] == 0xF
-    assert run["ctrace-setup"][0]["itm"]["privileged"] == 1
-    assert run["ctrace-setup"][0]["data"][0] == {
-        "location": "main",
-        "access": "RW",
-        "symbol-file": str(
-            (
-                cbuild_run.parent
-                / "Blinky/NUCLEO-L552ZE-Q/DebugSWO/Blinky.axf"
-            ).resolve(strict=False)
-        ),
-        "symbol": "main",
-        "address": 0x08000100,
-        "symbol-size": 64,
-        "symbol-type": "func",
-    }
+    assert run["ctrace-setup"] == ctrace["ctrace"]["setup"]
     refs = output["ctrace-run"]["ctrace-refs"]
     assert output["ctrace-run"]["generated-by"] == f"pyTS v{package_version()}"
     refs_by_name = {ref["ctrace-ref"]: ref for ref in refs}
@@ -612,7 +596,7 @@ def test_setup_trace_generates_coresight_register_settings(
     assert "exceptions: null" not in output_text
 
 
-def test_generate_ctrace_run_creates_fresh_document_with_enriched_setup() -> None:
+def test_generate_ctrace_run_uses_original_setup_and_enriched_refs() -> None:
     setup: list[Any] = [
         {
             "disable": True,
@@ -627,6 +611,7 @@ def test_generate_ctrace_run_creates_fresh_document_with_enriched_setup() -> Non
             ],
         }
     ]
+    original_setup = [{"disable": True, "data": [{"location": "main"}]}]
 
     output = cast(
         dict[str, Any],
@@ -639,13 +624,14 @@ def test_generate_ctrace_run_creates_fresh_document_with_enriched_setup() -> Non
                 }
             },
             [Processor.from_core("CM4", None)],
+            cast(Any, {"ctrace": {"setup": original_setup}}),
         ),
     )
 
     assert output == {
         "ctrace-run": {
             "generated-by": f"pyTS v{package_version()}",
-            "ctrace-setup": setup,
+            "ctrace-setup": original_setup,
             "ctrace-refs": [],
         }
     }
@@ -676,7 +662,7 @@ def test_setup_trace_scopes_refs_and_reports_unsupported_core(
     setup_trace(cbuild_run)
 
     output = read_yaml(project / ".trace" / f"{trace_name}.ctrace-run.yml")
-    assert output["ctrace-run"]["ctrace-setup"][0]["itm"]["atbid"] == 1
+    assert output["ctrace-run"]["ctrace-setup"] == ctrace["ctrace"]["setup"]
     assert output["ctrace-run"]["ctrace-refs"] == [
         {
             "ctrace-ref": "application/itm",
@@ -2406,11 +2392,7 @@ def test_setup_trace_accepts_anonymous_fixed_address(
     output_path = project / ".trace" / f"{trace_name}.ctrace-run.yml"
     output = read_yaml(output_path)
     entry = output["ctrace-run"]["ctrace-setup"][0]["data"][0]
-    assert entry == {
-        "location": 0x20001000,
-        "size": 4,
-        "address": 0x20001000,
-    }
+    assert entry == ctrace["ctrace"]["setup"][0]["data"][0]
     assert result.symbols == []
     assert result.missing == []
     ref = output["ctrace-run"]["ctrace-refs"][0]
@@ -2418,7 +2400,6 @@ def test_setup_trace_accepts_anonymous_fixed_address(
     assert ref["symbol-address"] == 0x20001000
     assert ref["regs"][0] == {"name": "DWT_COMP0", "value": 0x20001000}
     output_text = output_path.read_text(encoding="utf-8")
-    assert "location: 0x20001000" in output_text
     assert "address: 0x20001000" in output_text
 
 
