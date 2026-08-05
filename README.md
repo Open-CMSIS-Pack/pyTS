@@ -73,10 +73,11 @@ Their `regs` lists contain masked architectural ITM and DWT register writes for
 ITM channels, timestamps, basic DWTv1/DWTv2 data trace, exception trace, event
 trace, PC sampling, and DWT synchronization. Unsupported processor or feature
 combinations are reported on the corresponding reference with `error`.
-The `ctrace-run.ctrace-setup` node retains the enriched source `ctrace.setup`
-content with resolved location metadata. Symbol extents and types are emitted
-as `data[].symbol-size` and `data[].symbol-type`; `data[].size` remains the
-trace access size. Addresses and register values and masks are written as
+The `ctrace-run.ctrace-setup` node retains the original source `ctrace.setup`
+content. Enriched location metadata is used internally when generating
+`ctrace-refs`. Symbol extents and types are emitted as `data[].symbol-size`
+and `data[].symbol-type` in the generated references; `data[].size` remains
+the trace access size. Addresses and register values and masks are written as
 32-bit hexadecimal YAML integers. The generated
 `ctrace-run` mapping contains only `generated-by`, `ctrace-setup`, and
 `ctrace-refs`; other source `ctrace` properties are not copied.

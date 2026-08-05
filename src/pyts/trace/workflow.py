@@ -57,7 +57,7 @@ def setup_trace(
     project.output_path.parent.mkdir(parents=True, exist_ok=True)
     processors = processors_from_cbuild(project.cbuild_run)
     output = (
-        generate_ctrace_run(transformed.document, processors)
+        generate_ctrace_run(transformed.document, processors, source)
         if processors and has_spec_setup(transformed.document)
         else transformed.document
     )

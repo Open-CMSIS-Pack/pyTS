@@ -167,8 +167,14 @@ def create_coresight(processor: Processor) -> CoreSight | None:
 def generate_ctrace_run(
     ctrace: YamlMapping,
     processors: list[Processor],
+    original: YamlMapping | None = None,
 ) -> YamlMapping:
-    """Generate an enriched ctrace-run document and CoreSight settings."""
+    """Generate a ctrace-run document and CoreSight settings.
+
+    ``ctrace`` supplies the enriched data used to generate references.  When
+    provided, ``original`` supplies the unmodified setup written to
+    ``ctrace-run.ctrace-setup``.
+    """
 
     root = ctrace.get("ctrace")
     if not isinstance(root, dict):
@@ -176,6 +182,15 @@ def generate_ctrace_run(
     setups = root.get("setup")
     if not isinstance(setups, list):
         raise ValueError("ctrace.setup must be a list")
+    output_setups: list[JsonValue] = setups
+    if original is not None:
+        original_root = original.get("ctrace")
+        if not isinstance(original_root, dict):
+            raise ValueError("original ctrace must be a mapping")
+        original_setups = original_root.get("setup")
+        if not isinstance(original_setups, list):
+            raise ValueError("original ctrace.setup must be a list")
+        output_setups = original_setups
 
     implementations = _prepare_implementations(setups, processors)
     generated = _generate_refs(setups, processors, implementations)
@@ -186,7 +201,7 @@ def generate_ctrace_run(
     return {
         "ctrace-run": {
             "generated-by": generated_by,
-            "ctrace-setup": _hexify_addresses(setups),
+            "ctrace-setup": _hexify_addresses(output_setups),
             "ctrace-refs": cast(JsonValue, refs),
         }
     }
