@@ -119,7 +119,7 @@ _FEATURE_SPECS = {
     "events": FeatureSpec("event", repeated=True),
     "itm": FeatureSpec("itm"),
     "pcsampling": FeatureSpec("pcsample"),
-    "synchronization": FeatureSpec("dwt", repeated=True),
+    "synchronization": FeatureSpec("dwt"),
     "instructions": FeatureSpec("dwt"),
     "tracehalt": FeatureSpec("dwt"),
 }
@@ -792,8 +792,12 @@ def _event_regs(value: JsonValue) -> list[YamlMapping]:
 def _synchronization_regs(value: JsonValue) -> list[YamlMapping]:
     """Generate DWT synchronization configuration writes."""
 
-    if not isinstance(value, dict) or "DWT" not in value:
-        raise ValueError("synchronization entry must contain DWT")
+    if not isinstance(value, dict):
+        raise ValueError("synchronization must be an object")
+    if "DWT" not in value:
+        if value:
+            raise ValueError("synchronization object only supports DWT")
+        return []
     dwt = value["DWT"]
     if isinstance(dwt, bool):
         raise ValueError(f"unsupported synchronization.DWT: {dwt}")

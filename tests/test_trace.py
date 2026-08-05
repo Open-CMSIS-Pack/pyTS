@@ -516,7 +516,7 @@ def test_setup_trace_generates_coresight_register_settings(
                     "exceptions": None,
                     "events": [{"event": "CPICNT"}],
                     "itm": {"enable": 0xF, "privileged": 1},
-                    "synchronization": [{"DWT": "16M"}],
+                    "synchronization": {"DWT": "16M"},
                 }
             ]
         }
@@ -596,7 +596,7 @@ def test_setup_trace_generates_coresight_register_settings(
         {"name": "ITM_TCR", "value": 0x10001, "mask": 0x7F0001},
     ]
     assert refs_by_name["itm"]["source"] == [0, 1, 2, 3]
-    assert refs_by_name["synchronization#0"]["regs"] == [
+    assert refs_by_name["synchronization"]["regs"] == [
         {"name": "DWT_CTRL", "value": 1 << 10, "mask": 0xC00},
         {"name": "ITM_TCR", "value": 5, "mask": 5},
     ]
@@ -788,7 +788,7 @@ def test_generate_ctrace_run_propagates_implicit_atbid_to_data_itm_tcr() -> None
 
 def test_generate_ctrace_run_does_not_assign_atbid_when_itm_is_disabled() -> None:
     run = _generated_run(
-        [{"pname": "CM4", "synchronization": [{"DWT": 0}]}],
+        [{"pname": "CM4", "synchronization": {"DWT": 0}}],
         [Processor.from_core("CM4", "CM4")],
     )
 
@@ -1062,7 +1062,7 @@ def test_generate_ctrace_run_encodes_dwt_synchronization_literals(
     output = cast(
         dict[str, Any],
         generate_ctrace_run(
-            {"ctrace": {"setup": [{"synchronization": [{"DWT": dwt}]}]}},
+            {"ctrace": {"setup": [{"synchronization": {"DWT": dwt}}]}},
             [Processor.from_core("CM4", None)],
         ),
     )
@@ -1077,7 +1077,7 @@ def test_generate_ctrace_run_disables_dwt_synchronization_with_zero() -> None:
     output = cast(
         dict[str, Any],
         generate_ctrace_run(
-            {"ctrace": {"setup": [{"synchronization": [{"DWT": 0}]}]}},
+            {"ctrace": {"setup": [{"synchronization": {"DWT": 0}}]}},
             [Processor.from_core("CM4", None)],
         ),
     )
@@ -1087,10 +1087,23 @@ def test_generate_ctrace_run_disables_dwt_synchronization_with_zero() -> None:
     ]
 
 
+def test_generate_ctrace_run_allows_synchronization_without_dwt() -> None:
+    output = cast(
+        dict[str, Any],
+        generate_ctrace_run(
+            {"ctrace": {"setup": [{"synchronization": {}}]}},
+            [Processor.from_core("CM4", None)],
+        ),
+    )
+
+    assert output["ctrace-run"]["ctrace-refs"] == [
+        {"ctrace-ref": "synchronization", "type": "dwt"}
+    ]
+
+
 @pytest.mark.parametrize(
     "entry",
     [
-        {},
         {"period": "DWT\\16M"},
         {"DWT": 1},
         {"DWT": 0.0},
@@ -1107,7 +1120,7 @@ def test_generate_ctrace_run_rejects_invalid_dwt_synchronization_literals(
     output = cast(
         dict[str, Any],
         generate_ctrace_run(
-            {"ctrace": {"setup": [{"synchronization": [entry]}]}},
+            {"ctrace": {"setup": [{"synchronization": entry}]}},
             [Processor.from_core("CM4", None)],
         ),
     )
