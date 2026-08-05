@@ -22,6 +22,7 @@ from typing import Any
 
 import pytest
 
+from pyts._version import package_version
 from pyts.cli import main
 from pyts.trace import TraceSetupResult
 
@@ -113,3 +114,12 @@ def test_top_level_help_documents_trace_setup(
     assert "Generate a CMSIS trace run configuration." in captured.out
     assert "cbuild_run" in captured.out
     assert "--allow-missing" in captured.out
+
+
+@pytest.mark.parametrize("option", ["-V", "--version"])
+def test_top_level_version(option: str, capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main([option])
+
+    assert exc_info.value.code == 0
+    assert capsys.readouterr().out == f"pyts {package_version()}\n"
