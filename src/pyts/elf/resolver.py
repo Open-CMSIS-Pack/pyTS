@@ -88,12 +88,17 @@ class ElfResolver:
                 include_undefined=include_undefined,
             )
         if not requested:
-            return list(self._symbols().symbols(include_undefined))
+            return list(
+                self._dwarf().with_symbol_types(
+                    self._symbols().symbols(include_undefined)
+                )
+            )
 
-        results, exact_matches = self._symbols().resolve_names(
+        elf_results, exact_matches = self._symbols().resolve_names(
             requested,
             include_undefined=include_undefined,
         )
+        results = self._dwarf().with_symbol_types(elf_results)
         member_expressions = [
             name for name in requested if "." in name and name not in exact_matches
         ]
@@ -109,7 +114,10 @@ class ElfResolver:
         """Return the first defined symbol at an exact address."""
 
         self._check_open()
-        return self._symbols().resolve_address(address)
+        symbol = self._symbols().resolve_address(address)
+        if symbol is None:
+            return None
+        return self._dwarf().with_symbol_types([symbol])[0]
 
     def resolve_object_members_by_address(
         self,

@@ -34,6 +34,8 @@ from pyts.elf import (
 from pyts.elf.dwarf_members import (
     canonical_dwarf_type,
     die_symbol_type,
+    dwarf_type_name,
+    dwarf_type_size,
     resolve_die_address,
 )
 
@@ -268,6 +270,24 @@ def test_unknown_dwarf_encoding_does_not_leak_source_type_name() -> None:
     assert type_info.source_name == "vendor_specific_number"
 
 
+def test_missing_dwarf_type_information_remains_undefined() -> None:
+    missing_type = canonical_dwarf_type(None)
+    dangling_wrapper = FakeDie("DW_TAG_const_type")
+    wrapped_type = canonical_dwarf_type(dangling_wrapper)
+
+    assert missing_type.name == ""
+    assert missing_type.source_name is None
+    assert wrapped_type.name == ""
+    assert wrapped_type.source_name is None
+    assert dwarf_type_size(FakeCU([]), dangling_wrapper) == 0
+
+
+def test_base_type_without_encoding_remains_undefined() -> None:
+    die = FakeDie("DW_TAG_base_type", "implementation-defined")
+
+    assert dwarf_type_name(die) == ""
+
+
 def test_dwarf_subprogram_has_generic_function_type() -> None:
     assert die_symbol_type(FakeDie("DW_TAG_subprogram", "main")) == "function"
 
@@ -455,7 +475,7 @@ def test_resolves_symbol_metadata(
     assert symbols[0].address == 0x08000100
     assert symbols[0].address_hex == "0x8000100"
     assert symbols[0].size == 64
-    assert symbols[0].type == "func"
+    assert symbols[0].type == ""
     assert isinstance(symbols[0], SymbolInfo)
     assert symbols[0].binding == "global"
     assert symbols[0].section == ".text"
@@ -506,6 +526,62 @@ def test_reports_missing_symbols(
     assert missing_symbols(symbols, ["main", "missing"]) == ["missing"]
 
 
+def test_deduces_plain_symbol_type_from_dwarf(
+    monkeypatch: Any,
+    resolver_factory: ResolverFactory,
+) -> None:
+    monkeypatch.setattr("pyts.elf.symbol_table.SymbolTableSection", FakeSymbolTable)
+    unsigned_type = FakeDie(
+        "DW_TAG_base_type",
+        "unsigned int",
+        attrs={"DW_AT_encoding": FakeAttr(0x07)},
+    )
+    dwarf_info = FakeDwarfInfo(
+        [FakeCU([FakeDie("DW_TAG_variable", "counter", type_die=unsigned_type)])]
+    )
+    resolver = resolver_factory(
+        FakeDwarfELF(dwarf_info, sections=FakeELF().sections)
+    )
+
+    assert resolver.resolve_symbols(["counter"])[0].type == "unsigned"
+    address_symbol = resolver.resolve_address(0x20000000)
+    assert address_symbol is not None
+    assert address_symbol.type == "unsigned"
+
+
+def test_leaves_plain_symbol_type_undefined_when_dwarf_type_is_ambiguous(
+    monkeypatch: Any,
+    resolver_factory: ResolverFactory,
+) -> None:
+    monkeypatch.setattr("pyts.elf.symbol_table.SymbolTableSection", FakeSymbolTable)
+    dwarf_info = FakeDwarfInfo(
+        [
+            FakeCU(
+                [
+                    FakeDie(
+                        "DW_TAG_variable",
+                        "counter",
+                        type_die=FakeDie("DW_TAG_pointer_type"),
+                    ),
+                    FakeDie(
+                        "DW_TAG_variable",
+                        "counter",
+                        type_die=FakeDie("DW_TAG_structure_type"),
+                    ),
+                ]
+            )
+        ]
+    )
+
+    symbols = resolve_symbols_from_elf(
+        resolver_factory,
+        FakeDwarfELF(dwarf_info, sections=FakeELF().sections),
+        ["counter"],
+    )
+
+    assert symbols[0].type == ""
+
+
 def test_elf_resolver_reuses_symbol_table_cache(
     monkeypatch: Any,
     resolver_factory: ResolverFactory,
@@ -518,6 +594,7 @@ def test_elf_resolver_reuses_symbol_table_cache(
     counter = resolver.resolve_address(0x20000000)
     assert counter is not None
     assert counter.name == "counter"
+    assert resolver.resolve_address(0xDEADBEEF) is None
     assert [symbol.name for symbol in resolver.resolve_symbols()] == [
         "main",
         "counter",
@@ -727,7 +804,7 @@ def test_resolves_plain_symbol_with_source_file_filter(
             name="main",
             address=0x08000100,
             size=64,
-            type="func",
+            type="function",
             binding="global",
             visibility="default",
             section=".text",

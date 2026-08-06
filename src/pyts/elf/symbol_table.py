@@ -114,17 +114,19 @@ def defined_symbols(
             section = section_name(elf_file, entry_value(symbol, "st_shndx"))
             if section is None and not include_undefined:
                 continue
-            symbol_type = enum_value(mapping_entry(symbol, "st_info").get("type"))
+            elf_symbol_type = enum_value(
+                mapping_entry(symbol, "st_info").get("type")
+            )
             address = normalize_symbol_address(
                 int_entry(symbol, "st_value"),
-                symbol_type,
+                elf_symbol_type,
             )
             results.append(
                 SymbolInfo(
                     name=name,
                     address=address,
                     size=int_entry(symbol, "st_size"),
-                    type=symbol_type,
+                    type="",
                     binding=enum_value(mapping_entry(symbol, "st_info").get("bind")),
                     visibility=enum_value(
                         mapping_entry(symbol, "st_other").get("visibility")
@@ -197,7 +199,7 @@ def enum_value(value: object) -> str:
     return text.lower()
 
 
-def normalize_symbol_address(address: int, symbol_type: str) -> int:
+def normalize_symbol_address(address: int, elf_symbol_type: str) -> int:
     """Return a half-word-aligned address for an ARM code symbol."""
 
-    return address & ~1 if symbol_type in {"func", "gnu_ifunc"} else address
+    return address & ~1 if elf_symbol_type in {"func", "gnu_ifunc"} else address
