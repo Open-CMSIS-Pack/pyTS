@@ -31,7 +31,11 @@ from pyts.elf import (
     SymbolInfo,
     missing_symbols,
 )
-from pyts.elf.dwarf_members import resolve_die_address
+from pyts.elf.dwarf_members import (
+    canonical_dwarf_type,
+    die_symbol_type,
+    resolve_die_address,
+)
 
 ResolverFactory = Callable[[Any], ElfResolver]
 
@@ -184,6 +188,88 @@ class FakeDwarfInfo:
 
     def line_program_for_CU(self, cu: FakeCU) -> FakeLineProgram:
         return FakeLineProgram()
+
+
+@pytest.mark.parametrize(
+    ("source_name", "encoding", "expected"),
+    [
+        ("int", 0x05, "signed"),
+        ("i32", "DW_ATE_signed", "signed"),
+        ("unsigned int", 0x07, "unsigned"),
+        ("u32", "DW_ATE_unsigned", "unsigned"),
+        ("bool", 0x02, "bool"),
+        ("float", 0x04, "float"),
+        ("char32_t", 0x10, "char"),
+    ],
+)
+def test_canonical_dwarf_base_types_ignore_language_spelling(
+    source_name: str,
+    encoding: int | str,
+    expected: str,
+) -> None:
+    die = FakeDie(
+        "DW_TAG_base_type",
+        source_name,
+        attrs={"DW_AT_encoding": FakeAttr(encoding)},
+    )
+
+    type_info = canonical_dwarf_type(die)
+
+    assert type_info.name == expected
+    assert type_info.source_name == source_name
+
+
+@pytest.mark.parametrize(
+    ("tag", "expected"),
+    [
+        ("DW_TAG_pointer_type", "pointer"),
+        ("DW_TAG_reference_type", "reference"),
+        ("DW_TAG_array_type", "array"),
+        ("DW_TAG_enumeration_type", "enum"),
+        ("DW_TAG_structure_type", "struct"),
+        ("DW_TAG_class_type", "class"),
+        ("DW_TAG_union_type", "union"),
+        ("DW_TAG_subroutine_type", "function"),
+        ("DW_TAG_string_type", "string"),
+    ],
+)
+def test_canonical_dwarf_types_use_structural_tags(
+    tag: str,
+    expected: str,
+) -> None:
+    assert canonical_dwarf_type(FakeDie(tag)).name == expected
+
+
+def test_canonical_dwarf_type_unwraps_qualifiers_and_preserves_typedef() -> None:
+    base_type = FakeDie(
+        "DW_TAG_base_type",
+        "unsigned int",
+        attrs={"DW_AT_encoding": FakeAttr(0x07)},
+    )
+    typedef = FakeDie("DW_TAG_typedef", "uint32_t", type_die=base_type)
+    qualified = FakeDie("DW_TAG_const_type", type_die=typedef)
+
+    type_info = canonical_dwarf_type(qualified)
+
+    assert type_info.name == "unsigned"
+    assert type_info.source_name == "uint32_t"
+
+
+def test_unknown_dwarf_encoding_does_not_leak_source_type_name() -> None:
+    die = FakeDie(
+        "DW_TAG_base_type",
+        "vendor_specific_number",
+        attrs={"DW_AT_encoding": FakeAttr(0x80)},
+    )
+
+    type_info = canonical_dwarf_type(die)
+
+    assert type_info.name == ""
+    assert type_info.source_name == "vendor_specific_number"
+
+
+def test_dwarf_subprogram_has_generic_function_type() -> None:
+    assert die_symbol_type(FakeDie("DW_TAG_subprogram", "main")) == "function"
 
 
 class FakeLineProgram:
@@ -509,7 +595,18 @@ def _fake_os_rtx_info_dwarf() -> FakeDwarfInfo:
         "DW_TAG_structure_type",
         attrs={"DW_AT_byte_size": FakeAttr(164)},
         children=[
-            _member("version", 4, FakeDie("DW_TAG_base_type", "unsigned int")),
+            _member(
+                "version",
+                4,
+                FakeDie(
+                    "DW_TAG_base_type",
+                    "unsigned int",
+                    attrs={
+                        "DW_AT_byte_size": FakeAttr(4),
+                        "DW_AT_encoding": FakeAttr(0x07),
+                    },
+                ),
+            ),
             _member("thread", 20, thread_type),
         ],
     )
@@ -532,7 +629,10 @@ def test_resolves_nested_object_member(
     monkeypatch: Any,
     resolver_factory: ResolverFactory,
 ) -> None:
-    monkeypatch.setattr("pyts.elf.dwarf_members.DWARFExprParser", FakeDwarfExprParser)
+    monkeypatch.setattr(
+        "pyts.elf.dwarf_members.DWARFExprParser",
+        FakeDwarfExprParser,
+    )
 
     members = resolve_object_members_from_elf(
         resolver_factory,
@@ -551,6 +651,23 @@ def test_resolves_nested_object_member(
             offset=0x14,
         )
     ]
+
+
+def test_resolved_member_uses_canonical_type_and_keeps_source_spelling(
+    monkeypatch: Any,
+    resolver_factory: ResolverFactory,
+) -> None:
+    monkeypatch.setattr("pyts.elf.dwarf_members.DWARFExprParser", FakeDwarfExprParser)
+
+    members = resolve_object_members_from_elf(
+        resolver_factory,
+        FakeDwarfELF(_fake_os_rtx_info_dwarf()),
+        ["osRtxInfo.version"],
+    )
+
+    assert members[0].type == "unsigned"
+    assert members[0].source_type == "unsigned int"
+    assert members[0].size == 4
 
 
 def test_resolves_object_member_with_source_file_filter(

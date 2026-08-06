@@ -64,6 +64,7 @@ class SymbolInfo:
     section: str | None
     table: str
     source_file: str | None = None
+    source_type: str | None = None
 
     @property
     def address_hex(self) -> str:
@@ -84,6 +85,7 @@ class MemberInfo:
     offset: int
     source: str = "dwarf"
     source_file: str | None = None
+    source_type: str | None = None
 
     @property
     def address_hex(self) -> str:

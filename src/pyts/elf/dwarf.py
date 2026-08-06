@@ -22,11 +22,11 @@ from collections.abc import Sequence
 from typing import Any
 
 from pyts.elf.dwarf_members import (
+    canonical_dwarf_type,
     die_size,
     die_symbol_type,
     die_type,
     dwarf_name,
-    dwarf_type_name,
     dwarf_type_size,
     find_dwarf_variable,
     iter_object_members,
@@ -163,15 +163,17 @@ class DwarfIndex:
             return None
         offset, member_type = resolved
         address = base_address + offset
+        type_info = canonical_dwarf_type(member_type)
         return MemberInfo(
             name=expression,
             address=address,
             size=dwarf_type_size(cu, member_type),
-            type=dwarf_type_name(member_type),
+            type=type_info.name,
             base_symbol=base_name,
             member_path=".".join(member_names),
             offset=offset,
             source_file=die_source_file(info, cu, die),
+            source_type=type_info.source_name,
         )
 
     def _resolve_plain_symbols(
@@ -244,6 +246,11 @@ class DwarfIndex:
             section=None,
             table="dwarf",
             source_file=die_source,
+            source_type=(
+                canonical_dwarf_type(die_type(die)).source_name
+                if die.tag != "DW_TAG_subprogram"
+                else None
+            ),
         )
 
     def _member_cache(self) -> list[MemberInfo]:

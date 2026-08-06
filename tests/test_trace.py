@@ -139,7 +139,7 @@ def _tick_member() -> MemberInfo:
         name="osRtxInfo.kernel.tick",
         address=0x20000024,
         size=4,
-        type="int",
+        type="signed",
         base_symbol="osRtxInfo",
         member_path="kernel.tick",
         offset=0x10,
@@ -288,6 +288,39 @@ def test_setup_trace_derives_paths_and_enriches_ctrace(
     }
 
 
+def test_setup_trace_omits_unknown_resolved_symbol_type(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project, cbuild_run, trace_name = _write_trace_project(
+        tmp_path,
+        symbols=["mystery"],
+    )
+    symbol = SymbolInfo(
+        name="mystery",
+        address=0x20000000,
+        size=4,
+        type="",
+        binding="",
+        visibility="",
+        section=None,
+        table="dwarf",
+        source_type="vendor_specific_number",
+    )
+    _patch_trace_resolver(
+        monkeypatch,
+        resolve_symbols=lambda *_args: [symbol],
+    )
+
+    setup_trace(cbuild_run)
+
+    output = read_yaml(project / ".trace" / f"{trace_name}.ctrace-run.yml")
+    entry = output["ctrace"]["data"][0]
+    assert entry["address"] == "0x20000000"
+    assert entry["symbol-size"] == 4
+    assert "symbol-type" not in entry
+
+
 def test_setup_trace_enriches_spec_location_entries(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -380,7 +413,7 @@ def test_setup_trace_enriches_spec_location_entries(
             "symbol": "osRtxInfo.kernel.tick",
             "address": "0x20000024",
             "symbol-size": 4,
-            "symbol-type": "int",
+            "symbol-type": "signed",
         },
         {
             "location": 'Blinky\u00ad.axf|"rtx_kernel.c"::osRtxInfo.kernel.tick',
@@ -388,7 +421,7 @@ def test_setup_trace_enriches_spec_location_entries(
             "symbol": "osRtxInfo.kernel.tick",
             "address": "0x20000024",
             "symbol-size": 4,
-            "symbol-type": "int",
+            "symbol-type": "signed",
         },
     ]
 
