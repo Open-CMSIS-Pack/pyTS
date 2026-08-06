@@ -18,7 +18,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import replace
 from typing import Any
 
@@ -279,15 +279,12 @@ class DwarfIndex:
         info = self._dwarf_info()
         candidates: dict[str, set[str]] = {}
         if info is not None:
-            for cu in info.iter_CUs():
-                for die in cu.iter_DIEs():
-                    if die.tag not in {"DW_TAG_variable", "DW_TAG_subprogram"}:
-                        continue
-                    name = dwarf_name(die)
-                    if name:
-                        candidates.setdefault(name, set()).add(
-                            die_symbol_type(die)
-                        )
+            for die in iter_plain_symbol_dies(info):
+                name = dwarf_name(die)
+                if name:
+                    candidates.setdefault(name, set()).add(
+                        die_symbol_type(die)
+                    )
         self._symbol_types = {
             name: next(iter(types))
             for name, types in candidates.items()
@@ -346,3 +343,12 @@ def source_cache_key(expression: str, source_file: str | None) -> str:
     if source_file is None:
         return expression
     return f"{normalize_source_file(source_file)}::{expression}"
+
+
+def iter_plain_symbol_dies(info: Any) -> Iterator[Any]:
+    """Yield DWARF DIEs that can describe a plain symbol type."""
+
+    for cu in info.iter_CUs():
+        for die in cu.iter_DIEs():
+            if die.tag in {"DW_TAG_variable", "DW_TAG_subprogram"}:
+                yield die
