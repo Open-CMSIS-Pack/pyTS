@@ -413,15 +413,19 @@ def _copy_data_metadata(
 
     if feature != "data" or not isinstance(value, dict):
         return
-    for property_name in ("symbol", "symbol-file", "symbol-size", "symbol-type", "label"):
-        if property_name in value:
-            ref[property_name] = value[property_name]
+    
     symbol_file = value.get("symbol-file")
     address = _integer(value.get("address"))
+    size = _integer(value.get("size")) or _integer(value.get("symbol-size"))
+    data_type = value.get("symbol-type")
+    if size is not None:
+        ref["size"] = HexInt(size)
+    if isinstance(data_type, str):
+        ref["data-type"] = data_type
     if isinstance(symbol_file, str):
         ref["symbol-file"] = symbol_file
     if address is not None:
-        ref["symbol-address"] = HexInt(address)
+        ref["address"] = HexInt(address)
 
 
 def _feature_registers(
