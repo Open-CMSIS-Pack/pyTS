@@ -18,15 +18,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from dataclasses import replace
 from typing import Any
 
 from pyts.elf.dwarf_members import (
+    canonical_dwarf_type,
     die_size,
     die_symbol_type,
     die_type,
     dwarf_name,
-    dwarf_type_name,
     dwarf_type_size,
     find_dwarf_variable,
     iter_object_members,
@@ -56,6 +57,20 @@ class DwarfIndex:
         self._members_by_expression: dict[str, MemberInfo | None] = {}
         self._all_members: list[MemberInfo] | None = None
         self._source_files: set[str] | None = None
+        self._symbol_types: dict[str, str] | None = None
+
+    def with_symbol_types(
+        self, symbols: Sequence[SymbolInfo]
+    ) -> list[SymbolInfo]:
+        """Return symbols with types deduced exclusively from DWARF."""
+
+        if not symbols:
+            return []
+        symbol_types = self._plain_symbol_types()
+        return [
+            replace(symbol, type=symbol_types.get(symbol.name, ""))
+            for symbol in symbols
+        ]
 
     def resolve_members(
         self,
@@ -163,15 +178,17 @@ class DwarfIndex:
             return None
         offset, member_type = resolved
         address = base_address + offset
+        type_info = canonical_dwarf_type(member_type)
         return MemberInfo(
             name=expression,
             address=address,
             size=dwarf_type_size(cu, member_type),
-            type=dwarf_type_name(member_type),
+            type=type_info.name,
             base_symbol=base_name,
             member_path=".".join(member_names),
             offset=offset,
             source_file=die_source_file(info, cu, die),
+            source_type=type_info.source_name,
         )
 
     def _resolve_plain_symbols(
@@ -218,18 +235,25 @@ class DwarfIndex:
         ):
             return None
         die_source = die_source_file(info, cu, die)
+        symbol_type = die_symbol_type(die)
+        source_type = (
+            canonical_dwarf_type(die_type(die)).source_name
+            if die.tag != "DW_TAG_subprogram"
+            else None
+        )
         symbol = exact_symbols.get(name)
         if symbol is not None:
             return SymbolInfo(
                 name=symbol.name,
                 address=symbol.address,
                 size=symbol.size,
-                type=symbol.type,
+                type=symbol_type,
                 binding=symbol.binding,
                 visibility=symbol.visibility,
                 section=symbol.section,
                 table=symbol.table,
                 source_file=die_source,
+                source_type=source_type,
             )
         address = resolve_die_address(info, cu, die)
         if address is None:
@@ -238,13 +262,35 @@ class DwarfIndex:
             name=name,
             address=address,
             size=die_size(cu, die),
-            type=die_symbol_type(die),
+            type=symbol_type,
             binding="",
             visibility="",
             section=None,
             table="dwarf",
             source_file=die_source,
+            source_type=source_type,
         )
+
+    def _plain_symbol_types(self) -> dict[str, str]:
+        """Return unambiguous DWARF types indexed by plain symbol name."""
+
+        if self._symbol_types is not None:
+            return self._symbol_types
+        info = self._dwarf_info()
+        candidates: dict[str, set[str]] = {}
+        if info is not None:
+            for die in iter_plain_symbol_dies(info):
+                name = dwarf_name(die)
+                if name:
+                    candidates.setdefault(name, set()).add(
+                        die_symbol_type(die)
+                    )
+        self._symbol_types = {
+            name: next(iter(types))
+            for name, types in candidates.items()
+            if len(types) == 1 and "" not in types
+        }
+        return self._symbol_types
 
     def _member_cache(self) -> list[MemberInfo]:
         """Discover and cache every addressable DWARF object member."""
@@ -297,3 +343,12 @@ def source_cache_key(expression: str, source_file: str | None) -> str:
     if source_file is None:
         return expression
     return f"{normalize_source_file(source_file)}::{expression}"
+
+
+def iter_plain_symbol_dies(info: Any) -> Iterator[Any]:
+    """Yield DWARF DIEs that can describe a plain symbol type."""
+
+    for cu in info.iter_CUs():
+        for die in cu.iter_DIEs():
+            if die.tag in {"DW_TAG_variable", "DW_TAG_subprogram"}:
+                yield die

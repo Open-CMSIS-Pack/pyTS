@@ -77,8 +77,12 @@ The `ctrace-run.ctrace-setup` node retains the original source `ctrace.setup`
 content. Enriched location metadata is used internally when generating
 `ctrace-refs`. Symbol extents and types are emitted as `data[].symbol-size`
 and `data[].symbol-type` in the generated references; `data[].size` remains
-the trace access size. Addresses and register values and masks are written as
-32-bit hexadecimal YAML integers. The generated
+the trace access size. DWARF types use language-neutral categories derived from
+their tags and encodings, such as `signed`, `unsigned`, `bool`, `float`,
+`pointer`, `array`, and `struct`; source-language type names are not emitted.
+When a symbol type cannot be deduced from DWARF, `symbol-type` is omitted.
+Addresses and register values and masks are written as 32-bit hexadecimal YAML
+integers. The generated
 `ctrace-run` mapping contains only `generated-by`, `ctrace-setup`, and
 `ctrace-refs`; other source `ctrace` properties are not copied.
 Location-style and legacy `symbol`/`address` entries may coexist in one trace

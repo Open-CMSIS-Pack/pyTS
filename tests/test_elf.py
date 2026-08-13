@@ -31,7 +31,13 @@ from pyts.elf import (
     SymbolInfo,
     missing_symbols,
 )
-from pyts.elf.dwarf_members import resolve_die_address
+from pyts.elf.dwarf_members import (
+    canonical_dwarf_type,
+    die_symbol_type,
+    dwarf_type_name,
+    dwarf_type_size,
+    resolve_die_address,
+)
 
 ResolverFactory = Callable[[Any], ElfResolver]
 
@@ -184,6 +190,106 @@ class FakeDwarfInfo:
 
     def line_program_for_CU(self, cu: FakeCU) -> FakeLineProgram:
         return FakeLineProgram()
+
+
+@pytest.mark.parametrize(
+    ("source_name", "encoding", "expected"),
+    [
+        ("int", 0x05, "signed"),
+        ("i32", "DW_ATE_signed", "signed"),
+        ("unsigned int", 0x07, "unsigned"),
+        ("u32", "DW_ATE_unsigned", "unsigned"),
+        ("bool", 0x02, "bool"),
+        ("float", 0x04, "float"),
+        ("char32_t", 0x10, "char"),
+    ],
+)
+def test_canonical_dwarf_base_types_ignore_language_spelling(
+    source_name: str,
+    encoding: int | str,
+    expected: str,
+) -> None:
+    die = FakeDie(
+        "DW_TAG_base_type",
+        source_name,
+        attrs={"DW_AT_encoding": FakeAttr(encoding)},
+    )
+
+    type_info = canonical_dwarf_type(die)
+
+    assert type_info.name == expected
+    assert type_info.source_name == source_name
+
+
+@pytest.mark.parametrize(
+    ("tag", "expected"),
+    [
+        ("DW_TAG_pointer_type", "pointer"),
+        ("DW_TAG_reference_type", "reference"),
+        ("DW_TAG_array_type", "array"),
+        ("DW_TAG_enumeration_type", "enum"),
+        ("DW_TAG_structure_type", "struct"),
+        ("DW_TAG_class_type", "class"),
+        ("DW_TAG_union_type", "union"),
+        ("DW_TAG_subroutine_type", "function"),
+        ("DW_TAG_string_type", "string"),
+    ],
+)
+def test_canonical_dwarf_types_use_structural_tags(
+    tag: str,
+    expected: str,
+) -> None:
+    assert canonical_dwarf_type(FakeDie(tag)).name == expected
+
+
+def test_canonical_dwarf_type_unwraps_qualifiers_and_preserves_typedef() -> None:
+    base_type = FakeDie(
+        "DW_TAG_base_type",
+        "unsigned int",
+        attrs={"DW_AT_encoding": FakeAttr(0x07)},
+    )
+    typedef = FakeDie("DW_TAG_typedef", "uint32_t", type_die=base_type)
+    qualified = FakeDie("DW_TAG_const_type", type_die=typedef)
+
+    type_info = canonical_dwarf_type(qualified)
+
+    assert type_info.name == "unsigned"
+    assert type_info.source_name == "uint32_t"
+
+
+def test_unknown_dwarf_encoding_does_not_leak_source_type_name() -> None:
+    die = FakeDie(
+        "DW_TAG_base_type",
+        "vendor_specific_number",
+        attrs={"DW_AT_encoding": FakeAttr(0x80)},
+    )
+
+    type_info = canonical_dwarf_type(die)
+
+    assert type_info.name == ""
+    assert type_info.source_name == "vendor_specific_number"
+
+
+def test_missing_dwarf_type_information_remains_undefined() -> None:
+    missing_type = canonical_dwarf_type(None)
+    dangling_wrapper = FakeDie("DW_TAG_const_type")
+    wrapped_type = canonical_dwarf_type(dangling_wrapper)
+
+    assert missing_type.name == ""
+    assert missing_type.source_name is None
+    assert wrapped_type.name == ""
+    assert wrapped_type.source_name is None
+    assert dwarf_type_size(FakeCU([]), dangling_wrapper) == 0
+
+
+def test_base_type_without_encoding_remains_undefined() -> None:
+    die = FakeDie("DW_TAG_base_type", "implementation-defined")
+
+    assert dwarf_type_name(die) == ""
+
+
+def test_dwarf_subprogram_has_generic_function_type() -> None:
+    assert die_symbol_type(FakeDie("DW_TAG_subprogram", "main")) == "function"
 
 
 class FakeLineProgram:
@@ -369,7 +475,7 @@ def test_resolves_symbol_metadata(
     assert symbols[0].address == 0x08000100
     assert symbols[0].address_hex == "0x8000100"
     assert symbols[0].size == 64
-    assert symbols[0].type == "func"
+    assert symbols[0].type == ""
     assert isinstance(symbols[0], SymbolInfo)
     assert symbols[0].binding == "global"
     assert symbols[0].section == ".text"
@@ -420,6 +526,62 @@ def test_reports_missing_symbols(
     assert missing_symbols(symbols, ["main", "missing"]) == ["missing"]
 
 
+def test_deduces_plain_symbol_type_from_dwarf(
+    monkeypatch: Any,
+    resolver_factory: ResolverFactory,
+) -> None:
+    monkeypatch.setattr("pyts.elf.symbol_table.SymbolTableSection", FakeSymbolTable)
+    unsigned_type = FakeDie(
+        "DW_TAG_base_type",
+        "unsigned int",
+        attrs={"DW_AT_encoding": FakeAttr(0x07)},
+    )
+    dwarf_info = FakeDwarfInfo(
+        [FakeCU([FakeDie("DW_TAG_variable", "counter", type_die=unsigned_type)])]
+    )
+    resolver = resolver_factory(
+        FakeDwarfELF(dwarf_info, sections=FakeELF().sections)
+    )
+
+    assert resolver.resolve_symbols(["counter"])[0].type == "unsigned"
+    address_symbol = resolver.resolve_address(0x20000000)
+    assert address_symbol is not None
+    assert address_symbol.type == "unsigned"
+
+
+def test_leaves_plain_symbol_type_undefined_when_dwarf_type_is_ambiguous(
+    monkeypatch: Any,
+    resolver_factory: ResolverFactory,
+) -> None:
+    monkeypatch.setattr("pyts.elf.symbol_table.SymbolTableSection", FakeSymbolTable)
+    dwarf_info = FakeDwarfInfo(
+        [
+            FakeCU(
+                [
+                    FakeDie(
+                        "DW_TAG_variable",
+                        "counter",
+                        type_die=FakeDie("DW_TAG_pointer_type"),
+                    ),
+                    FakeDie(
+                        "DW_TAG_variable",
+                        "counter",
+                        type_die=FakeDie("DW_TAG_structure_type"),
+                    ),
+                ]
+            )
+        ]
+    )
+
+    symbols = resolve_symbols_from_elf(
+        resolver_factory,
+        FakeDwarfELF(dwarf_info, sections=FakeELF().sections),
+        ["counter"],
+    )
+
+    assert symbols[0].type == ""
+
+
 def test_elf_resolver_reuses_symbol_table_cache(
     monkeypatch: Any,
     resolver_factory: ResolverFactory,
@@ -432,6 +594,7 @@ def test_elf_resolver_reuses_symbol_table_cache(
     counter = resolver.resolve_address(0x20000000)
     assert counter is not None
     assert counter.name == "counter"
+    assert resolver.resolve_address(0xDEADBEEF) is None
     assert [symbol.name for symbol in resolver.resolve_symbols()] == [
         "main",
         "counter",
@@ -509,7 +672,18 @@ def _fake_os_rtx_info_dwarf() -> FakeDwarfInfo:
         "DW_TAG_structure_type",
         attrs={"DW_AT_byte_size": FakeAttr(164)},
         children=[
-            _member("version", 4, FakeDie("DW_TAG_base_type", "unsigned int")),
+            _member(
+                "version",
+                4,
+                FakeDie(
+                    "DW_TAG_base_type",
+                    "unsigned int",
+                    attrs={
+                        "DW_AT_byte_size": FakeAttr(4),
+                        "DW_AT_encoding": FakeAttr(0x07),
+                    },
+                ),
+            ),
             _member("thread", 20, thread_type),
         ],
     )
@@ -532,7 +706,10 @@ def test_resolves_nested_object_member(
     monkeypatch: Any,
     resolver_factory: ResolverFactory,
 ) -> None:
-    monkeypatch.setattr("pyts.elf.dwarf_members.DWARFExprParser", FakeDwarfExprParser)
+    monkeypatch.setattr(
+        "pyts.elf.dwarf_members.DWARFExprParser",
+        FakeDwarfExprParser,
+    )
 
     members = resolve_object_members_from_elf(
         resolver_factory,
@@ -551,6 +728,23 @@ def test_resolves_nested_object_member(
             offset=0x14,
         )
     ]
+
+
+def test_resolved_member_uses_canonical_type_and_keeps_source_spelling(
+    monkeypatch: Any,
+    resolver_factory: ResolverFactory,
+) -> None:
+    monkeypatch.setattr("pyts.elf.dwarf_members.DWARFExprParser", FakeDwarfExprParser)
+
+    members = resolve_object_members_from_elf(
+        resolver_factory,
+        FakeDwarfELF(_fake_os_rtx_info_dwarf()),
+        ["osRtxInfo.version"],
+    )
+
+    assert members[0].type == "unsigned"
+    assert members[0].source_type == "unsigned int"
+    assert members[0].size == 4
 
 
 def test_resolves_object_member_with_source_file_filter(
@@ -610,7 +804,7 @@ def test_resolves_plain_symbol_with_source_file_filter(
             name="main",
             address=0x08000100,
             size=64,
-            type="func",
+            type="function",
             binding="global",
             visibility="default",
             section=".text",

@@ -19,7 +19,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from typing import Any, cast
+from dataclasses import dataclass
+from typing import Any
 
 from elftools.dwarf.dwarf_expr import DWARFExprParser
 
@@ -28,11 +29,79 @@ from pyts.elf.model import MemberInfo
 
 
 TYPE_WRAPPER_TAGS = {
+    "DW_TAG_atomic_type",
     "DW_TAG_const_type",
     "DW_TAG_restrict_type",
     "DW_TAG_typedef",
     "DW_TAG_volatile_type",
 }
+
+AGGREGATE_TYPE_TAGS = {
+    "DW_TAG_class_type",
+    "DW_TAG_structure_type",
+    "DW_TAG_union_type",
+}
+
+CANONICAL_TAG_TYPES = {
+    "DW_TAG_array_type": "array",
+    "DW_TAG_class_type": "class",
+    "DW_TAG_enumeration_type": "enum",
+    "DW_TAG_pointer_type": "pointer",
+    "DW_TAG_ptr_to_member_type": "pointer",
+    "DW_TAG_reference_type": "reference",
+    "DW_TAG_rvalue_reference_type": "reference",
+    "DW_TAG_set_type": "set",
+    "DW_TAG_string_type": "string",
+    "DW_TAG_structure_type": "struct",
+    "DW_TAG_subroutine_type": "function",
+    "DW_TAG_union_type": "union",
+}
+
+CANONICAL_ENCODING_TYPES = {
+    "DW_ATE_address": "address",
+    "DW_ATE_ASCII": "char",
+    "DW_ATE_boolean": "bool",
+    "DW_ATE_complex_float": "complex",
+    "DW_ATE_decimal_float": "float",
+    "DW_ATE_float": "float",
+    "DW_ATE_imaginary_float": "complex",
+    "DW_ATE_numeric_string": "string",
+    "DW_ATE_signed": "signed",
+    "DW_ATE_signed_char": "signed",
+    "DW_ATE_signed_fixed": "signed",
+    "DW_ATE_UCS": "char",
+    "DW_ATE_unsigned": "unsigned",
+    "DW_ATE_unsigned_char": "unsigned",
+    "DW_ATE_unsigned_fixed": "unsigned",
+    "DW_ATE_UTF": "char",
+}
+
+DWARF_ENCODING_NAMES = {
+    0x01: "DW_ATE_address",
+    0x02: "DW_ATE_boolean",
+    0x03: "DW_ATE_complex_float",
+    0x04: "DW_ATE_float",
+    0x05: "DW_ATE_signed",
+    0x06: "DW_ATE_signed_char",
+    0x07: "DW_ATE_unsigned",
+    0x08: "DW_ATE_unsigned_char",
+    0x09: "DW_ATE_imaginary_float",
+    0x0B: "DW_ATE_numeric_string",
+    0x0D: "DW_ATE_signed_fixed",
+    0x0E: "DW_ATE_unsigned_fixed",
+    0x0F: "DW_ATE_decimal_float",
+    0x10: "DW_ATE_UTF",
+    0x11: "DW_ATE_UCS",
+    0x12: "DW_ATE_ASCII",
+}
+
+
+@dataclass(frozen=True)
+class DwarfTypeInfo:
+    """Language-neutral type category and optional source-level spelling."""
+
+    name: str
+    source_name: str | None
 
 
 def split_member_expression(expression: str) -> tuple[str, list[str]] | None:
@@ -106,24 +175,25 @@ def resolve_member_path(
     variable_die: Any,
     member_names: Sequence[str],
 ) -> tuple[int, Any] | None:
-    """Walk nested structure members and return total offset and final type."""
+    """Walk nested members and return total offset and declared final type."""
 
-    current_type = unwrap_dwarf_type(die_type(variable_die))
+    current_type = die_type(variable_die)
     offset = 0
     for member_name in member_names:
-        if current_type is None or current_type.tag not in {
-            "DW_TAG_structure_type",
-            "DW_TAG_union_type",
-        }:
+        aggregate_type = unwrap_dwarf_type(current_type)
+        if (
+            aggregate_type is None
+            or aggregate_type.tag not in AGGREGATE_TYPE_TAGS
+        ):
             return None
-        member_die = find_member(current_type, member_name)
+        member_die = find_member(aggregate_type, member_name)
         if member_die is None:
             return None
         next_offset = member_offset(member_die)
         if next_offset is None:
             return None
         offset += next_offset
-        current_type = unwrap_dwarf_type(die_type(member_die))
+        current_type = die_type(member_die)
     return None if current_type is None else (offset, current_type)
 
 
@@ -159,15 +229,17 @@ def iter_type_members(
 ) -> Iterable[MemberInfo]:
     """Recursively yield named members for a structure or union type."""
 
-    if type_die.tag not in {"DW_TAG_structure_type", "DW_TAG_union_type"}:
+    if type_die.tag not in AGGREGATE_TYPE_TAGS:
         return
     for member_die in type_die.iter_children():
         if member_die.tag != "DW_TAG_member":
             continue
         relative_offset = member_offset(member_die)
-        resolved_type = unwrap_dwarf_type(die_type(member_die))
+        declared_type = die_type(member_die)
+        resolved_type = unwrap_dwarf_type(declared_type)
         if relative_offset is None or resolved_type is None:
             continue
+        type_info = canonical_dwarf_type(declared_type)
         name = dwarf_name(member_die)
         member_path = parent_path + ([name] if name else [])
         offset = parent_offset + relative_offset
@@ -177,11 +249,12 @@ def iter_type_members(
                 name=f"{base_symbol}.{'.'.join(member_path)}",
                 address=address,
                 size=dwarf_type_size(cu, resolved_type),
-                type=dwarf_type_name(resolved_type),
+                type=type_info.name,
                 base_symbol=base_symbol,
                 member_path=".".join(member_path),
                 offset=offset,
                 source_file=source_file,
+                source_type=type_info.source_name,
             )
         yield from iter_type_members(
             source_file,
@@ -234,28 +307,73 @@ def member_offset(member_die: Any) -> int | None:
 def dwarf_type_size(cu: Any, die: Any) -> int:
     """Return a DWARF type's byte size, including pointer fallback size."""
 
-    byte_size = die.attributes.get("DW_AT_byte_size")
+    resolved_type = unwrap_dwarf_type(die)
+    if resolved_type is None:
+        return 0
+    byte_size = resolved_type.attributes.get("DW_AT_byte_size")
     if byte_size is not None:
         return int(byte_size.value)
-    if die.tag == "DW_TAG_pointer_type":
+    if resolved_type.tag in {
+        "DW_TAG_pointer_type",
+        "DW_TAG_ptr_to_member_type",
+        "DW_TAG_reference_type",
+        "DW_TAG_rvalue_reference_type",
+    }:
         header = getattr(cu, "header", {})
         address_size = header.get("address_size") if hasattr(header, "get") else None
         return int(address_size or 0)
     return 0
 
 
-def dwarf_type_name(die: Any) -> str:
-    """Return a human-readable name for a DWARF type DIE."""
+def canonical_dwarf_type(die: Any | None) -> DwarfTypeInfo:
+    """Derive a language-neutral category from DWARF type semantics."""
 
-    name = dwarf_name(die)
-    if name:
-        return name
-    known = {
-        "DW_TAG_pointer_type": "pointer",
-        "DW_TAG_structure_type": "struct",
-        "DW_TAG_union_type": "union",
-    }
-    return known.get(die.tag, cast(str, die.tag).removeprefix("DW_TAG_").lower())
+    if die is None:
+        return DwarfTypeInfo("", None)
+    source_name = dwarf_source_type_name(die)
+    resolved_type = unwrap_dwarf_type(die)
+    if resolved_type is None:
+        return DwarfTypeInfo("", source_name)
+    if source_name is None:
+        source_name = dwarf_name(resolved_type) or None
+    canonical_name = CANONICAL_TAG_TYPES.get(resolved_type.tag)
+    if canonical_name is None and resolved_type.tag == "DW_TAG_base_type":
+        canonical_name = canonical_encoding_type(resolved_type)
+    return DwarfTypeInfo(canonical_name or "", source_name)
+
+
+def dwarf_source_type_name(die: Any) -> str | None:
+    """Return the first declared name across type and qualifier wrappers."""
+
+    current = die
+    while current is not None:
+        name = dwarf_name(current)
+        if name:
+            return name
+        if current.tag not in TYPE_WRAPPER_TAGS:
+            return None
+        current = die_type(current)
+    return None
+
+
+def canonical_encoding_type(die: Any) -> str:
+    """Return the canonical category for a base type's DW_AT_encoding."""
+
+    attribute = die.attributes.get("DW_AT_encoding")
+    if attribute is None:
+        return ""
+    encoding = attribute.value
+    if isinstance(encoding, int):
+        encoding_name = DWARF_ENCODING_NAMES.get(encoding, "")
+    else:
+        encoding_name = str(encoding)
+    return CANONICAL_ENCODING_TYPES.get(encoding_name, "")
+
+
+def dwarf_type_name(die: Any) -> str:
+    """Return the language-neutral category for a DWARF type DIE."""
+
+    return canonical_dwarf_type(die).name
 
 
 def dwarf_name(die: Any) -> str:
@@ -288,8 +406,5 @@ def die_symbol_type(die: Any) -> str:
     """Return the normalized symbol type represented by a DWARF DIE."""
 
     if die.tag == "DW_TAG_subprogram":
-        return "func"
-    resolved_type = unwrap_dwarf_type(die_type(die))
-    if resolved_type is None:
-        return str(die.tag).removeprefix("DW_TAG_")
-    return dwarf_type_name(resolved_type)
+        return "function"
+    return canonical_dwarf_type(die_type(die)).name
