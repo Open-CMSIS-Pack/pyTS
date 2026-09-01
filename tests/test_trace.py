@@ -765,6 +765,15 @@ def test_generate_ctrace_run_sorts_refs_naturally_by_name() -> None:
     ]
 
 
+def test_generate_ctrace_run_skips_empty_data_node() -> None:
+    run = _generated_run(
+        [{"pname": "CM4", "data": None}],
+        [Processor.from_core("CM4", "CM4")],
+    )
+
+    assert run["ctrace-refs"] == []
+
+
 def test_generate_ctrace_run_reuses_atbid_for_multiple_setups_of_processor() -> None:
     run = _generated_run(
         [

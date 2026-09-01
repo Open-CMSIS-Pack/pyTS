@@ -338,6 +338,8 @@ def _setup_refs(
         if feature not in setup:
             continue
         value = setup[feature]
+        if feature == "data" and value is None:
+            continue
         if spec.repeated and isinstance(value, list):
             for index, entry in enumerate(value):
                 ref, streamed = _feature_ref(
