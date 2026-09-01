@@ -423,7 +423,13 @@ def _copy_data_metadata(
     if size is not None:
         ref["size"] = HexInt(size)
     if isinstance(data_type, str):
-        ref["data-type"] = data_type
+        if data_type in {"signed", "unsigned", "float"}:
+            ref["data-type"] = data_type
+        else:
+            ref["data-type"] = "unsigned"
+            ref["info"] = (
+                f"data-type defaulted to unsigned for symbol type {data_type!r}"
+            )
     if isinstance(symbol_file, str):
         ref["symbol-file"] = symbol_file
     if address is not None:
