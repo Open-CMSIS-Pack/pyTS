@@ -272,10 +272,18 @@ class CoreSight(ABC):
     core: str
     comparators: ComparatorAllocator = field(default_factory=ComparatorAllocator)
 
+    def normalize_data_request(
+        self, request: DataTraceRequest
+    ) -> DataTraceRequest:
+        """Return the effective request supported by this DWT generation."""
+
+        return request
+
     def encode_data(self, request: DataTraceRequest) -> list[YamlMapping]:
         """Encode one validated request using this session's allocator."""
 
-        return [write.to_yaml() for write in self._encode_data(request)]
+        effective = self.normalize_data_request(request)
+        return [write.to_yaml() for write in self._encode_data(effective)]
 
     @abstractmethod
     def _encode_data(self, request: DataTraceRequest) -> list[RegisterWrite]:
