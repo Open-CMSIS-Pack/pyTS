@@ -111,7 +111,9 @@ class DwtV1CoreSight(CoreSight):
                 "the address mask capability"
             )
         address = request.address & ~(size - 1)
-        return replace(request, address=address, size=size)
+        # replace preserves the concrete dataclass type at runtime, but
+        # Radarlint S5886 models its return as a generic DataclassInstance.
+        return replace(request, address=address, size=size)  # NOSONAR
 
     def reserve_data_match_pair(self) -> None:
         """Reserve portable comparators 0/1 before ordinary allocation begins."""
