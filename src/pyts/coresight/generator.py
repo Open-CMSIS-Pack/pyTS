@@ -31,6 +31,7 @@ from pyts.coresight.model import (
     DwtVersion,
     RegisterWrite,
     dwt_version_for_core,
+    processor_class,
 )
 from pyts.coresight.v1 import DwtV1CoreSight
 from pyts.coresight.v2 import DwtV2CoreSight
@@ -394,7 +395,32 @@ def _feature_ref(
         ref["error"] = str(error)
         return ref, False
 
+    _apply_data_adjustment(ref, feature, value, coresight)
     return _complete_feature_ref(ref, feature, regs, value)
+
+
+def _apply_data_adjustment(
+    ref: YamlMapping,
+    feature: str,
+    value: JsonValue,
+    coresight: CoreSight,
+) -> None:
+    """Surface effective data address and size values with a warning."""
+
+    if feature != "data":
+        return
+    requested = DataTraceRequest.from_yaml(value)
+    effective = coresight.normalize_data_request(requested)
+    if effective == requested:
+        return
+    ref["warning"] = (
+        f"Data range 0x{requested.address:08X}:{requested.size} "
+        f"aligned to 0x{effective.address:08X}:{effective.size} "
+        f"to satisfy the {processor_class(coresight.core)} "
+        "DWT-Unit power-of-two requirements"
+    )
+    ref["size"] = HexInt(effective.size)
+    ref["address"] = HexInt(effective.address)
 
 
 def _initial_feature_ref(
