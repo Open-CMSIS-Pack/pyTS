@@ -11,3 +11,7 @@ dist/
 coverage-html/
 coverage.xml
 pyTS.spec
+.qlty/logs
+.qlty/out
+.qlty/plugin_cachedir
+.qlty/results
