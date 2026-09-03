@@ -18,7 +18,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from pyts.coresight.model import (
     CoreSight,
@@ -67,25 +67,17 @@ class DwtV1Encoder:
         index = indices[0]
         return [
             RegisterWrite(f"DWT_COMP{index}", request.address),
-            RegisterWrite(f"DWT_MASK{index}", request.size.bit_length() - 1),
+            RegisterWrite(
+                f"DWT_MASK{index}", request.size.bit_length() - 1
+            ),
             RegisterWrite(f"DWT_FUNCTION{index}", function),
             _forwarding_write(),
         ]
 
     def _validate(self, request: DataTraceRequest) -> int:
-        """Validate DWTv1 constraints and return the output function code."""
+        """Validate DWTv1 output support and return its function code."""
 
         dwt_unit = f"{processor_class(self.core)} DWT-Unit"
-        if request.size & (request.size - 1):
-            raise ValueError(f"{dwt_unit} data.size must be a power of two")
-        if request.size > 1 << 31:
-            raise ValueError(
-                f"{dwt_unit} data.size exceeds the address mask capability"
-            )
-        if request.address % request.size:
-            raise ValueError(
-                f"{dwt_unit} data address must be aligned to data.size"
-            )
         if request.output not in _FUNCTIONS:
             raise ValueError(
                 f"{dwt_unit} does not support data.output {request.output.value!r}"
@@ -105,6 +97,23 @@ class DwtV1CoreSight(CoreSight):
 
     _match_pair_reserved: bool = field(default=False, init=False)
     _match_pair_available: bool = field(default=False, init=False)
+
+    def normalize_data_request(
+        self, request: DataTraceRequest
+    ) -> DataTraceRequest:
+        """Expand a request to its smallest enclosing DWTv1 mask range."""
+
+        last_address = request.address + request.size - 1
+        size = 1 << (request.address ^ last_address).bit_length()
+        if size > 1 << 31:
+            raise ValueError(
+                f"Data range exceeds {processor_class(self.core)} "
+                "DWT-Unit mask capability"
+            )
+        address = request.address & ~(size - 1)
+        # replace preserves the concrete dataclass type at runtime, but
+        # Radarlint S5886 models its return as a generic DataclassInstance.
+        return replace(request, address=address, size=size)  # NOSONAR
 
     def reserve_data_match_pair(self) -> None:
         """Reserve portable comparators 0/1 before ordinary allocation begins."""
