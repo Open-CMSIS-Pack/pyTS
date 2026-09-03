@@ -3,13 +3,10 @@ config_version = "0"
 
 # Glob patterns to exclude from analysis
 exclude_patterns = [
-    "scripts/",
-    ".github/",
-    "tests/",
-    "**/__pycache__/",
-    "**/*.egg-info/",
-    "build/",
-    "dist/",
+    "**/__pycache__/**",
+    "**/*.egg-info/**",
+    "build/**",
+    "dist/**",
 ]
 
 # Glob patterns to identify Python test files
