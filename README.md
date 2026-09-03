@@ -97,7 +97,17 @@ Data trace supports the CMSIS output modes `value`, `offset`, `PC`, `match`,
 per processor can use the portable comparator 0/1 address-value pair with any
 otherwise supported output. Its address range size and matched data width are
 encoded independently. DWTv2 Main Extension processors support all output
-modes. Cortex-M23 cannot generate the required data trace packets.
+modes. Cortex-M23 cannot generate the required data trace packets. DWTv1
+comparator ranges must be a naturally aligned power of two; when `data[].size`
+is not a power of two, or `data[].address` is not aligned to the comparator
+range, pyTS enlarges the size and realigns the address (rounding the address
+down) to the smallest naturally aligned power-of-two range that still covers
+the entire requested `address`/`size` range. The adjustment is reported on
+the corresponding reference with `warning`, naming the originally requested
+address and size, and the reference's `address` and `size` are updated to the
+effective values used for register generation. A `data.size` that exceeds the
+DWT mask capability (larger than `1 << 31`) is still reported with `error`
+and no register setup.
 
 DWTv2 offset output and arbitrary or unaligned ranges consume consecutive
 lower/limit comparator pairs. A one-byte range cannot emit an offset packet.

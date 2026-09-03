@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import warnings
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Sequence, cast
 
@@ -1248,8 +1249,9 @@ def test_generate_ctrace_run_copies_data_metadata_when_generation_fails() -> Non
         [
             {
                 "location": "counter",
-                "address": 0x20000000,
+                "address": 0x20000002,
                 "size": 3,
+                "output": "match",
                 "symbol": "counter",
                 "symbol-file": "counter.axf",
                 "symbol-size": 8,
@@ -1261,7 +1263,7 @@ def test_generate_ctrace_run_copies_data_metadata_when_generation_fails() -> Non
     )
 
     assert "error" in refs[0]
-    assert refs[0]["address"] == 0x20000000
+    assert refs[0]["address"] == 0x20000002
     assert refs[0]["symbol-file"] == "counter.axf"
     assert refs[0]["size"] == 3
     assert refs[0]["data-type"] == "unsigned"
@@ -1835,13 +1837,13 @@ def test_invalid_dwtv1_matches_do_not_consume_reserved_pair() -> None:
             {
                 "location": "invalid",
                 "address": 0x20000000,
-                "size": 3,
+                "output": "match",
                 "match": {"value": 1},
             },
             {
-                "location": "unaligned",
-                "address": 0x20000002,
-                "size": 4,
+                "location": "unsupported",
+                "address": 0x20000000,
+                "output": "PC+offset",
                 "match": {"value": 2},
             },
             {
@@ -1854,8 +1856,8 @@ def test_invalid_dwtv1_matches_do_not_consume_reserved_pair() -> None:
         Processor(core="CM4", pname=None, dwt_version=1),
     )
 
-    assert "must be a power of two" in refs[0]["error"]
-    assert "must be aligned" in refs[1]["error"]
+    assert "does not support data.output 'match'" in refs[0]["error"]
+    assert "does not support data.output 'PC+offset'" in refs[1]["error"]
     assert refs[2]["regs"][0]["name"] == "DWT_COMP0"
     assert refs[2]["regs"][3]["name"] == "DWT_COMP1"
     assert refs[3]["regs"][0]["name"] == "DWT_COMP2"
@@ -1915,6 +1917,36 @@ def test_direct_dwtv1_match_requires_pair_before_plain_allocation() -> None:
     assert second[0]["name"] == "DWT_COMP1"
 
 
+def test_direct_dwtv1_encode_data_normalizes_request_without_state() -> None:
+    coresight = create_coresight(
+        Processor(core="CM4", pname=None, dwt_version=1)
+    )
+    assert isinstance(coresight, DwtV1CoreSight)
+
+    request = DataTraceRequest(
+        address=0x20000000,
+        size=6,
+        access=DataAccess.WRITE,
+        output=DataOutput.VALUE,
+    )
+    effective = coresight.normalize_data_request(request)
+    writes = coresight.encode_data(request)
+
+    assert effective == replace(request, size=8)
+    assert writes[1] == {"name": "DWT_MASK0", "value": 3}
+
+    second = coresight.encode_data(
+        DataTraceRequest(
+            address=0x20000008,
+            size=4,
+            access=DataAccess.WRITE,
+            output=DataOutput.VALUE,
+        )
+    )
+
+    assert second[0]["name"] == "DWT_COMP1"
+
+
 @pytest.mark.parametrize(
     ("entry", "error"),
     [
@@ -1940,9 +1972,15 @@ def test_generate_ctrace_run_rejects_unsupported_dwtv1_outputs(
 @pytest.mark.parametrize(
     ("entry", "error"),
     [
-        ({"size": 3}, "must be a power of two"),
-        ({"address": 0x20000002, "size": 4}, "must be aligned"),
         ({"output": "pc"}, "unsupported data.output value"),
+        (
+            {"size": (1 << 31) + 1},
+            "Data range exceeds Cortex-M4 DWT-Unit mask capability",
+        ),
+        (
+            {"address": 0x7FFFFFFF, "size": 2},
+            "Data range exceeds Cortex-M4 DWT-Unit mask capability",
+        ),
     ],
 )
 def test_generate_ctrace_run_validates_dwtv1_data_configuration(
@@ -1959,15 +1997,69 @@ def test_generate_ctrace_run_validates_dwtv1_data_configuration(
     assert "regs" not in refs[0]
 
 
-def test_dwtv1_error_names_the_processor_class() -> None:
+def test_dwtv1_rounds_up_data_size_to_power_of_two_with_warning() -> None:
     _output, refs = _generate_data_refs(
         [{"location": "counter", "address": 0x20000000, "size": 3}],
         Processor(core="CM7", pname=None, dwt_version=1),
     )
 
-    assert refs[0]["error"] == (
-        "Cortex-M7 DWT-Unit data.size must be a power of two"
+    assert "error" not in refs[0]
+    assert refs[0]["warning"] == (
+        "Data range 0x20000000:3 aligned to 0x20000000:4 to satisfy the "
+        "Cortex-M7 DWT-Unit power-of-two requirements"
     )
+    assert refs[0]["size"] == 4
+    assert refs[0]["address"] == 0x20000000
+    assert refs[0]["regs"][1] == {"name": "DWT_MASK0", "value": 2}
+
+
+def test_dwtv1_rounds_up_data_size_within_address_alignment() -> None:
+    _output, refs = _generate_data_refs(
+        [{"location": "counter", "address": 0x20000000, "size": 22}],
+        Processor(core="CM7", pname=None, dwt_version=1),
+    )
+
+    assert "error" not in refs[0]
+    assert refs[0]["warning"] == (
+        "Data range 0x20000000:22 aligned to 0x20000000:32 to satisfy the "
+        "Cortex-M7 DWT-Unit power-of-two requirements"
+    )
+    assert refs[0]["size"] == 32
+    assert refs[0]["regs"][1] == {"name": "DWT_MASK0", "value": 5}
+
+
+def test_dwtv1_realigns_data_address_to_cover_requested_range() -> None:
+    _output, refs = _generate_data_refs(
+        [{"location": "counter", "address": 0x24000024, "size": 6}],
+        Processor(core="CM7", pname=None, dwt_version=1),
+    )
+
+    assert "error" not in refs[0]
+    assert refs[0]["warning"] == (
+        "Data range 0x24000024:6 aligned to 0x24000020:16 to satisfy the "
+        "Cortex-M7 DWT-Unit power-of-two requirements"
+    )
+    assert refs[0]["address"] == 0x24000020
+    assert refs[0]["size"] == 16
+    assert refs[0]["regs"][0] == {"name": "DWT_COMP0", "value": 0x24000020}
+    assert refs[0]["regs"][1] == {"name": "DWT_MASK0", "value": 4}
+
+
+def test_dwtv1_expands_range_across_next_power_of_two_boundary() -> None:
+    _output, refs = _generate_data_refs(
+        [{"location": "counter", "address": 0x20000004, "size": 30}],
+        Processor(core="CM7", pname=None, dwt_version=1),
+    )
+
+    assert "error" not in refs[0]
+    assert refs[0]["warning"] == (
+        "Data range 0x20000004:30 aligned to 0x20000000:64 to satisfy the "
+        "Cortex-M7 DWT-Unit power-of-two requirements"
+    )
+    assert refs[0]["address"] == 0x20000000
+    assert refs[0]["size"] == 64
+    assert refs[0]["regs"][0] == {"name": "DWT_COMP0", "value": 0x20000000}
+    assert refs[0]["regs"][1] == {"name": "DWT_MASK0", "value": 6}
 
 
 @pytest.mark.parametrize(
