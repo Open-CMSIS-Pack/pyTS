@@ -107,8 +107,8 @@ class DwtV1CoreSight(CoreSight):
         size = 1 << (request.address ^ last_address).bit_length()
         if size > 1 << 31:
             raise ValueError(
-                f"{processor_class(self.core)} DWT-Unit data.size exceeds "
-                "the address mask capability"
+                f"Data range exceeds {processor_class(self.core)} "
+                "DWT-Unit mask capability"
             )
         address = request.address & ~(size - 1)
         # replace preserves the concrete dataclass type at runtime, but

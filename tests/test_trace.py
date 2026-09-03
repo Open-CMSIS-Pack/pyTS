@@ -1945,11 +1945,11 @@ def test_generate_ctrace_run_rejects_unsupported_dwtv1_outputs(
         ({"output": "pc"}, "unsupported data.output value"),
         (
             {"size": (1 << 31) + 1},
-            "exceeds the address mask capability",
+            "Data range exceeds Cortex-M4 DWT-Unit mask capability",
         ),
         (
             {"address": 0x7FFFFFFF, "size": 2},
-            "exceeds the address mask capability",
+            "Data range exceeds Cortex-M4 DWT-Unit mask capability",
         ),
     ],
 )
@@ -1975,9 +1975,8 @@ def test_dwtv1_rounds_up_data_size_to_power_of_two_with_warning() -> None:
 
     assert "error" not in refs[0]
     assert refs[0]["warning"] == (
-        "Cortex-M7 DWT-Unit data address 0x20000000 size 3 increased to "
-        "address 0x20000000 size 4 to satisfy the power-of-two and "
-        "alignment requirements"
+        "Data range 0x20000000:3 aligned to 0x20000000:4 to satisfy the "
+        "Cortex-M7 DWT-Unit power-of-two requirements"
     )
     assert refs[0]["size"] == 4
     assert refs[0]["address"] == 0x20000000
@@ -1992,9 +1991,8 @@ def test_dwtv1_rounds_up_data_size_within_address_alignment() -> None:
 
     assert "error" not in refs[0]
     assert refs[0]["warning"] == (
-        "Cortex-M7 DWT-Unit data address 0x20000000 size 22 increased to "
-        "address 0x20000000 size 32 to satisfy the power-of-two and "
-        "alignment requirements"
+        "Data range 0x20000000:22 aligned to 0x20000000:32 to satisfy the "
+        "Cortex-M7 DWT-Unit power-of-two requirements"
     )
     assert refs[0]["size"] == 32
     assert refs[0]["regs"][1] == {"name": "DWT_MASK0", "value": 5}
@@ -2008,9 +2006,8 @@ def test_dwtv1_realigns_data_address_to_cover_requested_range() -> None:
 
     assert "error" not in refs[0]
     assert refs[0]["warning"] == (
-        "Cortex-M7 DWT-Unit data address 0x24000024 size 6 increased to "
-        "address 0x24000020 size 16 to satisfy the power-of-two and "
-        "alignment requirements"
+        "Data range 0x24000024:6 aligned to 0x24000020:16 to satisfy the "
+        "Cortex-M7 DWT-Unit power-of-two requirements"
     )
     assert refs[0]["address"] == 0x24000020
     assert refs[0]["size"] == 16
@@ -2026,9 +2023,8 @@ def test_dwtv1_expands_range_across_next_power_of_two_boundary() -> None:
 
     assert "error" not in refs[0]
     assert refs[0]["warning"] == (
-        "Cortex-M7 DWT-Unit data address 0x20000004 size 30 increased to "
-        "address 0x20000000 size 64 to satisfy the power-of-two and "
-        "alignment requirements"
+        "Data range 0x20000004:30 aligned to 0x20000000:64 to satisfy the "
+        "Cortex-M7 DWT-Unit power-of-two requirements"
     )
     assert refs[0]["address"] == 0x20000000
     assert refs[0]["size"] == 64

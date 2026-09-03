@@ -414,10 +414,10 @@ def _apply_data_adjustment(
     if effective == requested:
         return
     ref["warning"] = (
-        f"{processor_class(coresight.core)} DWT-Unit data address "
-        f"0x{requested.address:08X} size {requested.size} increased to "
-        f"address 0x{effective.address:08X} size {effective.size} to satisfy "
-        "the power-of-two and alignment requirements"
+        f"Data range 0x{requested.address:08X}:{requested.size} "
+        f"aligned to 0x{effective.address:08X}:{effective.size} "
+        f"to satisfy the {processor_class(coresight.core)} "
+        "DWT-Unit power-of-two requirements"
     )
     ref["size"] = HexInt(effective.size)
     ref["address"] = HexInt(effective.address)
