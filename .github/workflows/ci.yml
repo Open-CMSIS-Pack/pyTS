@@ -25,8 +25,8 @@ jobs:
         os: [linux, windows, darwin]
         arch: [amd64, arm64]
         include:
-          - { os: linux, arch: amd64, runner: ubuntu-22.04 }
-          - { os: linux, arch: arm64, runner: ubuntu-22.04-arm }
+          - { os: linux, arch: amd64, runner: ubuntu-24.04 }
+          - { os: linux, arch: arm64, runner: ubuntu-24.04-arm }
           - { os: windows, arch: amd64, runner: windows-2022 }
           - { os: windows, arch: arm64, runner: windows-11-arm }
           - { os: darwin, arch: arm64, runner: macos-14 }
