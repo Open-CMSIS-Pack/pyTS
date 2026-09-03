@@ -78,3 +78,10 @@ name = "trufflehog"
 
 [[plugin]]
 name = "zizmor"
+
+# Plain assertions are pytest's idiomatic assertion mechanism and are rewritten
+# by pytest to provide detailed failure output.
+[[triage]]
+match.rules = ["bandit:B101"]
+match.file_patterns = ["tests/**"]
+set.ignored = true
