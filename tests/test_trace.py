@@ -586,7 +586,10 @@ def test_setup_trace_generates_coresight_register_settings(
     assert refs_by_name["data#0"]["address"] == 0x08000100
     assert refs_by_name["data#0"]["symbol-file"].endswith("/Blinky.axf")
     assert refs_by_name["data#0"]["size"] == 64
-    assert refs_by_name["data#0"]["data-type"] == "func"
+    assert refs_by_name["data#0"]["data-type"] == "unsigned"
+    assert refs_by_name["data#0"]["info"] == (
+        "data-type defaulted to unsigned for symbol type 'func'"
+    )
     assert "symbol" not in refs_by_name["data#0"]
     assert refs_by_name["data#0"]["regs"] == [
         {"name": "DWT_COMP0", "value": 0x08000100},
@@ -1195,9 +1198,30 @@ def test_generate_ctrace_run_copies_data_reference_metadata_to_ref() -> None:
     assert refs[0]["address"] == 0x20000000
     assert refs[0]["symbol-file"] == "counter.axf"
     assert refs[0]["size"] == 8
-    assert refs[0]["data-type"] == "object"
+    assert refs[0]["data-type"] == "unsigned"
+    assert refs[0]["info"] == (
+        "data-type defaulted to unsigned for symbol type 'object'"
+    )
     assert "symbol" not in refs[0]
     assert "label" not in refs[0]
+
+
+@pytest.mark.parametrize("data_type", ["signed", "unsigned", "float"])
+def test_generate_ctrace_run_preserves_supported_data_types(data_type: str) -> None:
+    _output, refs = _generate_data_refs(
+        [
+            {
+                "location": "counter",
+                "address": 0x20000000,
+                "symbol-size": 4,
+                "symbol-type": data_type,
+            }
+        ],
+        Processor.from_core("CM4", None),
+    )
+
+    assert refs[0]["data-type"] == data_type
+    assert "info" not in refs[0]
 
 
 def test_generate_ctrace_run_omits_absent_data_location_metadata() -> None:
@@ -1242,7 +1266,10 @@ def test_generate_ctrace_run_copies_data_metadata_when_generation_fails() -> Non
     assert refs[0]["address"] == 0x20000002
     assert refs[0]["symbol-file"] == "counter.axf"
     assert refs[0]["size"] == 3
-    assert refs[0]["data-type"] == "object"
+    assert refs[0]["data-type"] == "unsigned"
+    assert refs[0]["info"] == (
+        "data-type defaulted to unsigned for symbol type 'object'"
+    )
     assert "symbol" not in refs[0]
     assert "label" not in refs[0]
 
@@ -1267,7 +1294,10 @@ def test_generate_ctrace_run_copies_data_metadata_for_unsupported_core() -> None
     )
     assert refs[0]["symbol-file"] == "counter.axf"
     assert refs[0]["size"] == 8
-    assert refs[0]["data-type"] == "object"
+    assert refs[0]["data-type"] == "unsigned"
+    assert refs[0]["info"] == (
+        "data-type defaulted to unsigned for symbol type 'object'"
+    )
     assert "symbol" not in refs[0]
     assert "label" not in refs[0]
 
