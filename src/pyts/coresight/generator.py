@@ -100,6 +100,8 @@ class FeatureSpec:
     ref_type: str
     repeated: bool = False
     streamed: bool = False
+    null_activates: bool = False
+    sequence: bool = False
 
 
 @dataclass(frozen=True)
@@ -113,16 +115,16 @@ class _GeneratedRef:
 
 
 _FEATURE_SPECS = {
-    "timestamps": FeatureSpec("dwt"),
-    "timesync": FeatureSpec("global_ts"),
-    "data": FeatureSpec("dwt", repeated=True),
-    "exceptions": FeatureSpec("exception"),
-    "events": FeatureSpec("event", repeated=True),
+    "timestamps": FeatureSpec("dwt", null_activates=True),
+    "timesync": FeatureSpec("global_ts", null_activates=True),
+    "data": FeatureSpec("dwt", repeated=True, sequence=True),
+    "exceptions": FeatureSpec("exception", null_activates=True),
+    "events": FeatureSpec("event", repeated=True, sequence=True),
     "itm": FeatureSpec("itm"),
     "pcsampling": FeatureSpec("pcsample"),
     "synchronization": FeatureSpec("dwt"),
     "instructions": FeatureSpec("dwt"),
-    "tracehalt": FeatureSpec("dwt"),
+    "tracehalt": FeatureSpec("dwt", sequence=True),
 }
 
 FeatureEncoder = Callable[[JsonValue, CoreSight], list[YamlMapping]]
@@ -339,10 +341,18 @@ def _setup_refs(
         if feature not in setup:
             continue
         value = setup[feature]
-        if feature == "data" and value is None:
+        if value is None and not spec.null_activates:
+            continue
+        if (
+            spec.sequence
+            and isinstance(value, list)
+            and all(entry is None for entry in value)
+        ):
             continue
         if spec.repeated and isinstance(value, list):
             for index, entry in enumerate(value):
+                if entry is None:
+                    continue
                 ref, streamed = _feature_ref(
                     feature,
                     entry,
@@ -692,7 +702,7 @@ def _setup_atbid(setup: YamlMapping) -> int | None:
         return None
     if not isinstance(itm, dict):
         return None
-    if "atbid" not in itm:
+    if itm.get("atbid") is None:
         return None
     atbid = _integer(itm.get("atbid"))
     if atbid is None or not 0 < atbid <= _ITM_TRACE_BUS_ID_MAX:
@@ -794,7 +804,11 @@ def _itm_regs(value: JsonValue) -> list[YamlMapping]:
     if not isinstance(value, dict):
         raise ValueError("itm must be a mapping")
     enable = _required_u32(value.get("enable"), "itm.enable")
-    privileged = _u32(value.get("privileged", 0), "itm.privileged")
+    privileged_value = value.get("privileged")
+    privileged = _u32(
+        0 if privileged_value is None else privileged_value,
+        "itm.privileged",
+    )
     return [
         _reg("ITM_TER0", enable),
         _reg("ITM_TPR", privileged, 0xF),
@@ -816,7 +830,8 @@ def _timestamp_regs(value: JsonValue) -> list[YamlMapping]:
 
     if value is not None and not isinstance(value, dict):
         raise ValueError("timestamps must be an empty node or mapping")
-    prescaler = 1 if value is None else value.get("itm-prescaler", 1)
+    prescaler_value = None if value is None else value.get("itm-prescaler")
+    prescaler = 1 if prescaler_value is None else prescaler_value
     encodings = {1: 0, 4: 1, 16: 2, 64: 3}
     if not isinstance(prescaler, int) or isinstance(prescaler, bool):
         raise ValueError("timestamps.itm-prescaler must be 1, 4, 16, or 64")
@@ -847,11 +862,11 @@ def _synchronization_regs(value: JsonValue) -> list[YamlMapping]:
 
     if not isinstance(value, dict):
         raise ValueError("synchronization must be a mapping")
-    if "DWT" not in value:
-        if value:
+    dwt = value.get("DWT")
+    if dwt is None:
+        if any(key != "DWT" and item is not None for key, item in value.items()):
             raise ValueError("synchronization mapping only supports the 'DWT' key")
         return []
-    dwt = value["DWT"]
     if isinstance(dwt, bool):
         raise ValueError(f"unsupported synchronization.DWT: {dwt}")
     if isinstance(dwt, int):
@@ -872,7 +887,7 @@ def _pc_sampling_regs(value: JsonValue) -> list[YamlMapping]:
 
     if value is not None and not isinstance(value, dict):
         raise ValueError("pcsampling must be an empty node or mapping")
-    if value is None or "period" not in value:
+    if value is None or value.get("period") is None:
         return [_reg("DWT_CTRL", 0, 1 << 12)]
     period = value["period"]
     if not isinstance(period, int) or isinstance(period, bool):
