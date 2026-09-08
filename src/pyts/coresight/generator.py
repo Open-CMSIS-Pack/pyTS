@@ -864,8 +864,6 @@ def _synchronization_regs(value: JsonValue) -> list[YamlMapping]:
         raise ValueError("synchronization must be a mapping")
     dwt = value.get("DWT")
     if dwt is None:
-        if any(key != "DWT" and item is not None for key, item in value.items()):
-            raise ValueError("synchronization mapping only supports the 'DWT' key")
         return []
     if isinstance(dwt, bool):
         raise ValueError(f"unsupported synchronization.DWT: {dwt}")

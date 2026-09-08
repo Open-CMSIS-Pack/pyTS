@@ -936,6 +936,27 @@ def test_generate_ctrace_run_keeps_null_required_properties_invalid(
     assert run["ctrace-refs"][0]["error"] == error
 
 
+@pytest.mark.parametrize(
+    ("setup", "error"),
+    [
+        ({"events": [{"Event": "CPICNT"}]}, "events entry must contain an event name"),
+        ({"itm": {"Enable": 1}}, "itm.enable is required"),
+        ({"data": [{"Address": 0x20000000}]}, "data location has no resolved address"),
+        (
+            {"data": [{"address": 0x20000000, "match": {"Value": 1}}]},
+            "data.match.value is required",
+        ),
+    ],
+)
+def test_generate_ctrace_run_keeps_required_property_names_case_sensitive(
+    setup: dict[str, Any],
+    error: str,
+) -> None:
+    run = _generated_run([setup], [Processor.from_core("CM4", None)])
+
+    assert run["ctrace-refs"][0]["error"] == error
+
+
 def test_generate_ctrace_run_reuses_atbid_for_multiple_setups_of_processor() -> None:
     run = _generated_run(
         [
@@ -1251,7 +1272,18 @@ def test_generate_ctrace_run_encodes_dwt_synchronization_literals(
     output = cast(
         dict[str, Any],
         generate_ctrace_run(
-            {"ctrace": {"setup": [{"synchronization": {"DWT": dwt}}]}},
+            {
+                "ctrace": {
+                    "setup": [
+                        {
+                            "synchronization": {
+                                "DWT": dwt,
+                                "extension": {"mode": "future"},
+                            }
+                        }
+                    ]
+                }
+            },
             [Processor.from_core("CM4", None)],
         ),
     )
@@ -1276,7 +1308,18 @@ def test_generate_ctrace_run_disables_dwt_synchronization_with_zero() -> None:
     ]
 
 
-@pytest.mark.parametrize("synchronization", [{}, {"DWT": None}])
+@pytest.mark.parametrize(
+    "synchronization",
+    [
+        {},
+        {"DWT": None},
+        {"extension": None},
+        {"extension": 1},
+        {"extension": {"enabled": True}},
+        {"dwt": "16M"},
+        {"period": "DWT\\16M"},
+    ],
+)
 def test_generate_ctrace_run_allows_synchronization_without_dwt(
     synchronization: dict[str, Any],
 ) -> None:
@@ -1293,10 +1336,30 @@ def test_generate_ctrace_run_allows_synchronization_without_dwt(
     ]
 
 
+def test_generate_ctrace_run_ignores_and_preserves_additional_properties() -> None:
+    setup = {
+        "pname": "CM4",
+        "extension": {"mode": "future"},
+        "itm": {"enable": 0, "extension": [1, 2]},
+        "pcsampling": {"period": 0, "Period": 64},
+        "synchronization": {"DWT": None, "extension": {"enabled": True}},
+    }
+
+    run = _generated_run([setup], [Processor.from_core("CM4", "CM4")])
+
+    assert run["ctrace-setup"] == [setup]
+    assert all("error" not in ref for ref in run["ctrace-refs"])
+    assert all("extension" not in ref for ref in run["ctrace-refs"])
+    refs = {ref["ctrace-ref"]: ref for ref in run["ctrace-refs"]}
+    assert refs["CM4/pcsampling"]["regs"] == [
+        {"name": "DWT_CTRL", "value": 0, "mask": 1 << 12}
+    ]
+    assert "regs" not in refs["CM4/synchronization"]
+
+
 @pytest.mark.parametrize(
     "entry",
     [
-        {"period": "DWT\\16M"},
         {"DWT": 1},
         {"DWT": 0.0},
         {"DWT": False},

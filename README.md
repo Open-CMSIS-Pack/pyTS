@@ -76,6 +76,10 @@ combinations are reported on the corresponding reference with `error`.
 Optional `null` values in trace lists, objects, and their optional properties
 are treated as not configured. The presence-only `disable`, `timestamps`,
 `timesync`, and `exceptions` nodes retain their meaning when empty.
+Additional properties in `ctrace` configurations are preserved but ignored,
+allowing future schema extensions without validation failures. Property names
+remain case-sensitive: an incorrectly cased optional property is ignored,
+while an incorrectly cased required property is reported as missing.
 The `ctrace-run.ctrace-setup` node retains the original source `ctrace.setup`
 content. Enriched location metadata is used internally when generating
 `ctrace-refs`. Symbol extents and types are emitted as `data[].symbol-size`
