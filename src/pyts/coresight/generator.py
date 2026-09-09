@@ -76,16 +76,12 @@ _EVENT_BITS = {
     "FOLDCNT": 21,
 }
 
+# Both CYCTAP settings can represent 1024 cycles. Iterating the 1024-cycle
+# setting second preserves the existing CYCTAP=1, POSTPRESET=0 encoding.
 _PC_SAMPLING_PERIODS: dict[int, tuple[int, int]] = {
-    64: (0, 0),
-    128: (0, 1),
-    256: (0, 3),
-    512: (0, 7),
-    1024: (1, 0),
-    2048: (1, 1),
-    4096: (1, 3),
-    8192: (1, 7),
-    16384: (1, 15),
+    cyctap * multiplier: (cyctap_bit, multiplier - 1)
+    for cyctap, cyctap_bit in ((64, 0), (1024, 1))
+    for multiplier in range(1, 17)
 }
 
 _ITM_TRACE_BUS_ID_POS = 16
