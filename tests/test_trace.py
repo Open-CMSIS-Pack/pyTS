@@ -427,6 +427,44 @@ def test_setup_trace_enriches_spec_location_entries(
     ]
 
 
+def test_setup_trace_enriches_null_metadata_without_rewriting_original_setup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data = {
+        "location": "main",
+        "address": None,
+        "symbol-file": None,
+        "symbol": None,
+        "symbol-size": None,
+        "symbol-type": None,
+    }
+    ctrace = {"ctrace": {"setup": [{"data": [data]}]}}
+    project, cbuild_run, trace_name = _write_trace_project(
+        tmp_path,
+        ctrace=ctrace,
+        processors=[{"core": "CM4"}],
+    )
+    _patch_trace_resolver(
+        monkeypatch,
+        resolve_symbols=lambda *_args: [_main_symbol()],
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        setup_trace(cbuild_run)
+
+    assert caught == []
+    output = read_yaml(project / ".trace" / f"{trace_name}.ctrace-run.yml")
+    assert output["ctrace-run"]["ctrace-setup"] == ctrace["ctrace"]["setup"]
+    ref = output["ctrace-run"]["ctrace-refs"][0]
+    assert "error" not in ref
+    assert ref["address"] == 0x08000100
+    assert ref["symbol-file"].endswith("/Blinky.axf")
+    assert ref["size"] == 64
+    assert ref["data-type"] == "unsigned"
+
+
 def test_setup_trace_limits_elf_lookup_to_setup_processor(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -769,13 +807,154 @@ def test_generate_ctrace_run_sorts_refs_naturally_by_name() -> None:
     ]
 
 
-def test_generate_ctrace_run_skips_empty_data_node() -> None:
+@pytest.mark.parametrize(
+    "feature",
+    [
+        "data",
+        "events",
+        "itm",
+        "pcsampling",
+        "synchronization",
+        "instructions",
+        "tracehalt",
+    ],
+)
+def test_generate_ctrace_run_skips_null_container_feature(feature: str) -> None:
     run = _generated_run(
-        [{"pname": "CM4", "data": None}],
+        [{"pname": "CM4", feature: None}],
         [Processor.from_core("CM4", "CM4")],
     )
 
     assert run["ctrace-refs"] == []
+    assert run["ctrace-setup"][0][feature] is None
+
+
+@pytest.mark.parametrize("feature", ["data", "events", "tracehalt"])
+@pytest.mark.parametrize("entries", [[], [None], [None, None]])
+def test_generate_ctrace_run_skips_empty_sequence_feature(
+    feature: str,
+    entries: list[None],
+) -> None:
+    run = _generated_run(
+        [{feature: entries}],
+        [Processor.from_core("CM4", None)],
+    )
+
+    assert run["ctrace-refs"] == []
+
+
+@pytest.mark.parametrize(
+    ("feature", "entry", "expected_ref"),
+    [
+        ("data", {"address": 0x20000000}, "data#1"),
+        ("events", {"event": "CPICNT"}, "events#1"),
+    ],
+)
+def test_generate_ctrace_run_skips_null_sequence_entries_without_renumbering(
+    feature: str,
+    entry: dict[str, Any],
+    expected_ref: str,
+) -> None:
+    run = _generated_run(
+        [{feature: [None, entry]}],
+        [Processor.from_core("CM4", None)],
+    )
+
+    assert run["ctrace-refs"][0]["ctrace-ref"] == expected_ref
+
+
+def test_generate_ctrace_run_preserves_null_presence_flags() -> None:
+    run = _generated_run(
+        [{"timestamps": None, "timesync": None, "exceptions": None}],
+        [Processor.from_core("CM4", None)],
+    )
+
+    refs = {ref["ctrace-ref"]: ref for ref in run["ctrace-refs"]}
+    assert {"timestamps", "timesync", "exceptions"} <= refs.keys()
+    assert refs["timesync"]["error"] == (
+        "timesync trace register generation is not supported"
+    )
+
+
+def test_generate_ctrace_run_treats_null_disable_as_present() -> None:
+    run = _generated_run(
+        [{"disable": None, "timestamps": None}],
+        [Processor.from_core("CM4", None)],
+    )
+
+    assert run["ctrace-refs"] == []
+
+
+def test_generate_ctrace_run_defaults_null_optional_feature_properties() -> None:
+    run = _generated_run(
+        [
+            {
+                "timestamps": {"itm-prescaler": None},
+                "itm": {"enable": 1, "privileged": None, "atbid": None},
+                "pcsampling": {"period": None},
+                "synchronization": {"DWT": None},
+            }
+        ],
+        [Processor.from_core("CM4", None)],
+    )
+
+    refs = {ref["ctrace-ref"]: ref for ref in run["ctrace-refs"]}
+    assert run["ctrace-setup"][0]["itm"]["atbid"] == 1
+    assert refs["timestamps"]["regs"][0]["value"] == 3
+    assert refs["itm"]["regs"][1] == {
+        "name": "ITM_TPR",
+        "value": 0,
+        "mask": 0xF,
+    }
+    assert refs["pcsampling"]["regs"] == [
+        {"name": "DWT_CTRL", "value": 0, "mask": 1 << 12}
+    ]
+    assert refs["synchronization"]["regs"] == [
+        {"name": "DWT_CTRL", "value": 3 << 10, "mask": 0xC00},
+        {"name": "ITM_TCR", "value": 5, "mask": 5},
+    ]
+
+
+@pytest.mark.parametrize(
+    ("setup", "error"),
+    [
+        ({"events": [{"event": None}]}, "events entry must contain an event name"),
+        ({"itm": {"enable": None}}, "itm.enable is required"),
+        ({"data": [{"address": None}]}, "data location has no resolved address"),
+        (
+            {"data": [{"address": 0x20000000, "match": {"value": None}}]},
+            "data.match.value is required",
+        ),
+    ],
+)
+def test_generate_ctrace_run_keeps_null_required_properties_invalid(
+    setup: dict[str, Any],
+    error: str,
+) -> None:
+    run = _generated_run([setup], [Processor.from_core("CM4", None)])
+
+    assert run["ctrace-refs"][0]["error"] == error
+
+
+@pytest.mark.parametrize(
+    ("setup", "error"),
+    [
+        ({"events": [{"Event": "CPICNT"}]}, "events entry must contain an event name"),
+        ({"itm": {"Enable": 1}}, "itm.enable is required"),
+        ({"data": [{"Address": 0x20000000}]}, "data location has no resolved address"),
+        (
+            {"data": [{"address": 0x20000000, "match": {"Value": 1}}]},
+            "data.match.value is required",
+        ),
+    ],
+)
+def test_generate_ctrace_run_keeps_required_property_names_case_sensitive(
+    setup: dict[str, Any],
+    error: str,
+) -> None:
+    run = _generated_run([setup], [Processor.from_core("CM4", None)])
+
+    assert run["ctrace-refs"][0]["error"] == error
 
 
 def test_generate_ctrace_run_reuses_atbid_for_multiple_setups_of_processor() -> None:
@@ -1039,7 +1218,6 @@ def test_generate_ctrace_run_encodes_pc_sampling_integer_periods(
         192,
         32768,
         True,
-        None,
         "64*1",
         "1024*16",
         "64*0",
@@ -1066,7 +1244,7 @@ def test_generate_ctrace_run_rejects_invalid_pc_sampling_period_literals(
     assert "regs" not in ref
 
 
-@pytest.mark.parametrize("pcsampling", [None, {}, {"period": 0}])
+@pytest.mark.parametrize("pcsampling", [{}, {"period": None}, {"period": 0}])
 def test_generate_ctrace_run_disables_pc_sampling_by_default_or_zero(
     pcsampling: Any,
 ) -> None:
@@ -1094,7 +1272,18 @@ def test_generate_ctrace_run_encodes_dwt_synchronization_literals(
     output = cast(
         dict[str, Any],
         generate_ctrace_run(
-            {"ctrace": {"setup": [{"synchronization": {"DWT": dwt}}]}},
+            {
+                "ctrace": {
+                    "setup": [
+                        {
+                            "synchronization": {
+                                "DWT": dwt,
+                                "extension": {"mode": "future"},
+                            }
+                        }
+                    ]
+                }
+            },
             [Processor.from_core("CM4", None)],
         ),
     )
@@ -1119,28 +1308,75 @@ def test_generate_ctrace_run_disables_dwt_synchronization_with_zero() -> None:
     ]
 
 
-def test_generate_ctrace_run_allows_synchronization_without_dwt() -> None:
+@pytest.mark.parametrize(
+    "synchronization",
+    [
+        {},
+        {"DWT": None},
+        {"extension": None},
+        {"extension": 1},
+        {"extension": {"enabled": True}},
+        {"dwt": "16M"},
+        {"period": "DWT\\16M"},
+    ],
+)
+def test_generate_ctrace_run_defaults_synchronization_without_dwt_to_256m(
+    synchronization: dict[str, Any],
+) -> None:
     output = cast(
         dict[str, Any],
         generate_ctrace_run(
-            {"ctrace": {"setup": [{"synchronization": {}}]}},
+            {"ctrace": {"setup": [{"synchronization": synchronization}]}},
             [Processor.from_core("CM4", None)],
         ),
     )
 
+    assert output["ctrace-run"]["ctrace-setup"][0]["synchronization"] == (
+        synchronization
+    )
     assert output["ctrace-run"]["ctrace-refs"] == [
-        {"ctrace-ref": "synchronization", "type": "dwt"}
+        {
+            "ctrace-ref": "synchronization",
+            "type": "dwt",
+            "regs": [
+                {"name": "DWT_CTRL", "value": 3 << 10, "mask": 0xC00},
+                {"name": "ITM_TCR", "value": 5, "mask": 5},
+            ],
+            "stream": 1,
+        }
+    ]
+
+
+def test_generate_ctrace_run_ignores_and_preserves_additional_properties() -> None:
+    setup = {
+        "pname": "CM4",
+        "extension": {"mode": "future"},
+        "itm": {"enable": 0, "extension": [1, 2]},
+        "pcsampling": {"period": 0, "Period": 64},
+        "synchronization": {"DWT": None, "extension": {"enabled": True}},
+    }
+
+    run = _generated_run([setup], [Processor.from_core("CM4", "CM4")])
+
+    assert run["ctrace-setup"] == [setup]
+    assert all("error" not in ref for ref in run["ctrace-refs"])
+    assert all("extension" not in ref for ref in run["ctrace-refs"])
+    refs = {ref["ctrace-ref"]: ref for ref in run["ctrace-refs"]}
+    assert refs["CM4/pcsampling"]["regs"] == [
+        {"name": "DWT_CTRL", "value": 0, "mask": 1 << 12}
+    ]
+    assert refs["CM4/synchronization"]["regs"] == [
+        {"name": "DWT_CTRL", "value": 3 << 10, "mask": 0xC00},
+        {"name": "ITM_TCR", "value": 5, "mask": 5},
     ]
 
 
 @pytest.mark.parametrize(
     "entry",
     [
-        {"period": "DWT\\16M"},
         {"DWT": 1},
         {"DWT": 0.0},
         {"DWT": False},
-        {"DWT": None},
         {"DWT": "0"},
         {"DWT": "16m"},
         {"DWT": "32M"},
@@ -1177,6 +1413,27 @@ def _generate_data_refs(
         list[dict[str, Any]],
         output["ctrace-run"]["ctrace-refs"],
     )
+
+
+def test_generate_ctrace_run_defaults_null_optional_data_properties() -> None:
+    output, refs = _generate_data_refs(
+        [
+            {
+                "address": 0x20000000,
+                "size": None,
+                "access": None,
+                "output": None,
+                "match": None,
+            }
+        ],
+        Processor.from_core("CM33", None),
+    )
+
+    assert "error" not in refs[0]
+    assert refs[0]["regs"][0] == {"name": "DWT_COMP0", "value": 0x20000000}
+    assert refs[0]["regs"][1] == {"name": "DWT_FUNCTION0", "value": 0x82D}
+    entry = output["ctrace-run"]["ctrace-setup"][0]["data"][0]
+    assert all(entry[key] is None for key in ("size", "access", "output", "match"))
 
 
 def test_generate_ctrace_run_copies_data_reference_metadata_to_ref() -> None:
@@ -1618,14 +1875,20 @@ def test_generate_ctrace_run_applies_output_to_linked_address_comparator(
     }
 
 
-def test_generate_ctrace_run_defaults_data_match_size_to_word() -> None:
+@pytest.mark.parametrize(
+    "match",
+    [{"value": 0x12345678}, {"value": 0x12345678, "size": None}],
+)
+def test_generate_ctrace_run_defaults_data_match_size_to_word(
+    match: dict[str, Any],
+) -> None:
     _output, refs = _generate_data_refs(
         [
             {
                 "location": "counter",
                 "address": 0x20000000,
                 "size": 4,
-                "match": {"value": 0x12345678},
+                "match": match,
             }
         ],
         Processor(core="CM33", pname=None, dwt_version=2),
@@ -2214,8 +2477,8 @@ def test_invalid_coresight_request_does_not_consume_comparators() -> None:
 @pytest.mark.parametrize(
     ("match", "error"),
     [
-        (None, "data.match must be a mapping"),
         ({}, "data.match.value is required"),
+        ({"value": None}, "data.match.value is required"),
         ({"value": True}, "data.match.value must be an integer"),
         ({"value": 1.0}, "data.match.value must be an integer"),
         ({"value": -1}, "data.match.value does not fit data.match.size"),

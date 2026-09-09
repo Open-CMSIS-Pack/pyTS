@@ -73,6 +73,15 @@ Their `regs` lists contain masked architectural ITM and DWT register writes for
 ITM channels, timestamps, basic DWTv1/DWTv2 data trace, exception trace, event
 trace, PC sampling, and DWT synchronization. Unsupported processor or feature
 combinations are reported on the corresponding reference with `error`.
+Optional `null` values in trace lists and objects are treated as not configured;
+for optional properties they are treated as omitted and use the documented
+default. In particular, `synchronization.DWT` defaults to `256M`. The
+presence-only `disable`, `timestamps`, `timesync`, and `exceptions` nodes retain
+their meaning when empty.
+Additional properties in `ctrace` configurations are preserved but ignored,
+allowing future schema extensions without validation failures. Property names
+remain case-sensitive: an incorrectly cased optional property is ignored,
+while an incorrectly cased required property is reported as missing.
 The `ctrace-run.ctrace-setup` node retains the original source `ctrace.setup`
 content. Enriched location metadata is used internally when generating
 `ctrace-refs`. Symbol extents and types are emitted as `data[].symbol-size`

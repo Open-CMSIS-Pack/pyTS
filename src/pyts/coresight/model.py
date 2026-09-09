@@ -132,13 +132,14 @@ class DataMatch:
 
         if not isinstance(value, dict):
             raise ValueError("data.match must be a mapping")
-        if "value" not in value:
+        if value.get("value") is None:
             raise ValueError("data.match.value is required")
         match_value = _integer(value.get("value"))
         if match_value is None:
             raise ValueError("data.match.value must be an integer")
-        if "size" in value:
-            match_size = _integer(value.get("size"))
+        size_value = value.get("size")
+        if size_value is not None:
+            match_size = _integer(size_value)
             if match_size is None:
                 raise ValueError("data.match.size must be an integer")
         else:
@@ -170,7 +171,8 @@ class DataTraceRequest:
         size = _data_size(value, address)
         access = _data_access(value)
         output = _data_output(value)
-        match = DataMatch.from_yaml(value["match"]) if "match" in value else None
+        match_value = value.get("match")
+        match = DataMatch.from_yaml(match_value) if match_value is not None else None
         return cls(address, size, access, output, match)
 
 
@@ -193,7 +195,8 @@ def _data_address(value: dict[str, JsonValue]) -> int:
 def _data_size(value: dict[str, JsonValue], address: int) -> int:
     """Validate and return a data trace size."""
 
-    size = _integer(value.get("size")) if "size" in value else 4
+    size_value = value.get("size")
+    size = 4 if size_value is None else _integer(size_value)
     if size is None:
         raise ValueError("data.size must be an integer")
     if size <= 0:
@@ -206,7 +209,9 @@ def _data_size(value: dict[str, JsonValue], address: int) -> int:
 def _data_access(value: dict[str, JsonValue]) -> DataAccess:
     """Validate and return a data trace access mode."""
 
-    access_value = value.get("access", "W")
+    access_value = value.get("access")
+    if access_value is None:
+        access_value = "W"
     if not isinstance(access_value, str):
         raise ValueError("data.access must be R, W, or RW")
     try:
@@ -218,7 +223,9 @@ def _data_access(value: dict[str, JsonValue]) -> DataAccess:
 def _data_output(value: dict[str, JsonValue]) -> DataOutput:
     """Validate and return a data trace output mode."""
 
-    output_value = value.get("output", "value")
+    output_value = value.get("output")
+    if output_value is None:
+        output_value = "value"
     if not isinstance(output_value, str):
         raise ValueError(f"unsupported data.output value: {output_value!r}")
     try:
