@@ -1168,15 +1168,12 @@ def test_generate_ctrace_run_uses_dwtv2_comparator_model() -> None:
 @pytest.mark.parametrize(
     ("period", "cyctap_bit", "postpreset"),
     [
-        (64, 0, 0),
-        (128, 0, 1),
-        (256, 0, 3),
-        (512, 0, 7),
-        (1024, 1, 0),
-        (2048, 1, 1),
-        (4096, 1, 3),
-        (8192, 1, 7),
-        (16384, 1, 15),
+        (64 * multiplier, 0, multiplier - 1)
+        for multiplier in range(1, 16)
+    ]
+    + [
+        (1024 * multiplier, 1, multiplier - 1)
+        for multiplier in range(1, 17)
     ],
 )
 def test_generate_ctrace_run_encodes_pc_sampling_integer_periods(
@@ -1215,7 +1212,6 @@ def test_generate_ctrace_run_encodes_pc_sampling_integer_periods(
         1,
         63,
         65,
-        192,
         32768,
         True,
         "64*1",

@@ -97,7 +97,8 @@ integers. The generated
 Location-style and legacy `symbol`/`address` entries may coexist in one trace
 document; pyTS resolves both styles in document order using the same ELF cache.
 PC sampling periods use integer CPU-cycle counts: `0` disables sampling, while
-supported enabled periods are powers of two from `64` through `16384`.
+supported enabled periods are `64 * n` or `1024 * n`, where `n` is an integer
+from `1` through `16`.
 
 Data trace supports the CMSIS output modes `value`, `offset`, `PC`, `match`,
 `PC+value`, `offset+value`, and `PC+offset`. DWTv1 supports `value`,
