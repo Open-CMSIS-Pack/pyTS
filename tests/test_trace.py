@@ -909,10 +909,10 @@ def test_generate_ctrace_run_defaults_null_optional_feature_properties() -> None
     assert refs["pcsampling"]["regs"] == [
         {"name": "DWT_CTRL", "value": 0, "mask": 1 << 12}
     ]
-    assert refs["synchronization"] == {
-        "ctrace-ref": "synchronization",
-        "type": "dwt",
-    }
+    assert refs["synchronization"]["regs"] == [
+        {"name": "DWT_CTRL", "value": 3 << 10, "mask": 0xC00},
+        {"name": "ITM_TCR", "value": 5, "mask": 5},
+    ]
 
 
 @pytest.mark.parametrize(
@@ -1320,7 +1320,7 @@ def test_generate_ctrace_run_disables_dwt_synchronization_with_zero() -> None:
         {"period": "DWT\\16M"},
     ],
 )
-def test_generate_ctrace_run_allows_synchronization_without_dwt(
+def test_generate_ctrace_run_defaults_synchronization_without_dwt_to_256m(
     synchronization: dict[str, Any],
 ) -> None:
     output = cast(
@@ -1331,8 +1331,19 @@ def test_generate_ctrace_run_allows_synchronization_without_dwt(
         ),
     )
 
+    assert output["ctrace-run"]["ctrace-setup"][0]["synchronization"] == (
+        synchronization
+    )
     assert output["ctrace-run"]["ctrace-refs"] == [
-        {"ctrace-ref": "synchronization", "type": "dwt"}
+        {
+            "ctrace-ref": "synchronization",
+            "type": "dwt",
+            "regs": [
+                {"name": "DWT_CTRL", "value": 3 << 10, "mask": 0xC00},
+                {"name": "ITM_TCR", "value": 5, "mask": 5},
+            ],
+            "stream": 1,
+        }
     ]
 
 
@@ -1354,7 +1365,10 @@ def test_generate_ctrace_run_ignores_and_preserves_additional_properties() -> No
     assert refs["CM4/pcsampling"]["regs"] == [
         {"name": "DWT_CTRL", "value": 0, "mask": 1 << 12}
     ]
-    assert "regs" not in refs["CM4/synchronization"]
+    assert refs["CM4/synchronization"]["regs"] == [
+        {"name": "DWT_CTRL", "value": 3 << 10, "mask": 0xC00},
+        {"name": "ITM_TCR", "value": 5, "mask": 5},
+    ]
 
 
 @pytest.mark.parametrize(
