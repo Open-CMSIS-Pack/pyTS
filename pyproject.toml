@@ -37,23 +37,23 @@ test = [
 ]
 typecheck = [
   "mypy>=2.3.1",
-  "pyright>=1.1.411",
+  "pyright>=1.1.414",
   "pytest>=9.1.1",
-  "types-PyYAML>=6.0.12.20260815",
+  "types-PyYAML>=6.0.12.20260906",
 ]
 lint = [
   "diff-cover>=10.5.1",
   "mypy>=2.3.1",
-  "pyright>=1.1.411",
+  "pyright>=1.1.414",
   "pytest>=9.1.1",
   "pytest-cov>=7.1.0",
-  "types-PyYAML>=6.0.12.20260815",
+  "types-PyYAML>=6.0.12.20260906",
 ]
 license = [
   "pip-licenses>=5.5.5",
 ]
 installer = [
-  "build>=1.6.0",
+  "build>=1.6.1",
   "pyinstaller>=6.22.2"
 ]
 
