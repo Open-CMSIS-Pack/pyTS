@@ -253,7 +253,7 @@ def enrich_property(
 ) -> None:
     """Add a missing property or warn while preserving an inconsistent value."""
 
-    if property_name not in item:
+    if item.get(property_name) is None:
         item[property_name] = resolved_value
         return
     if is_consistent:

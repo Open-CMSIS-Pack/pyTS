@@ -26,6 +26,26 @@ The test and type-checking configuration is defined in `pyproject.toml` and
 python -m pip install -e '.[test,typecheck]'
 ```
 
+## Regression tests for bug reports
+
+- Usually follow a test-first workflow when analysing a bug report. First,
+  capture the report's reproducer in a regression test without changing the
+  implementation and run that test to confirm it fails for the reported
+  reason. Then implement the fix and rerun the test to confirm it passes.
+- If the reproducer does not fail before the fix, investigate and document why
+  instead of assuming that the regression test covers the reported bug.
+- Prefer a dedicated test module for an issue-specific regression, named for
+  the issue (for example, `tests/test_issue_45.py`), instead of placing the
+  reproducer in a broad behavioural test module.
+- Link the originating bug report from the regression test so its intent and
+  provenance remain explicit.
+- When a bug report provides YAML input or output, embed that YAML verbatim in
+  the test and parse it. Do not translate it into Python dictionaries or lists;
+  the original reproducer and reported result should remain directly visible.
+- If the report shows erroneous output rather than the desired output, preserve
+  that YAML as the reported output and assert that the regression no longer
+  produces it.
+
 ## Coverage and Qlty
 
 - Install the test package in editable mode before generating coverage so the
