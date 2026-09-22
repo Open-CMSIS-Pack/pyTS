@@ -1,6 +1,6 @@
 [build-system]
 requires = [
-  "hatchling>=1.32.0",
+  "hatchling>=1.32.3",
   "hatch-vcs>=0.5.0",
 ]
 build-backend = "hatchling.build"
@@ -54,7 +54,7 @@ license = [
 ]
 installer = [
   "build>=1.6.1",
-  "pyinstaller>=6.22.2"
+  "pyinstaller>=6.22.3"
 ]
 
 [project.scripts]
