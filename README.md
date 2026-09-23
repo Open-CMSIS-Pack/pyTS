@@ -75,7 +75,7 @@ trace, PC sampling, and DWT synchronization. Unsupported processor or feature
 combinations are reported on the corresponding reference with `error`.
 Optional `null` values in trace lists and objects are treated as not configured;
 for optional properties they are treated as omitted and use the documented
-default. In particular, `synchronization.DWT` defaults to `256M`. The
+default. In particular, `synchronization.DWT` defaults to `16M`. The
 presence-only `disable`, `timestamps`, `timesync`, and `exceptions` nodes retain
 their meaning when empty.
 Additional properties in `ctrace` configurations are preserved but ignored,

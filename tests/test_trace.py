@@ -910,7 +910,7 @@ def test_generate_ctrace_run_defaults_null_optional_feature_properties() -> None
         {"name": "DWT_CTRL", "value": 0, "mask": 1 << 12}
     ]
     assert refs["synchronization"]["regs"] == [
-        {"name": "DWT_CTRL", "value": 3 << 10, "mask": 0xC00},
+        {"name": "DWT_CTRL", "value": 1 << 10, "mask": 0xC00},
         {"name": "ITM_TCR", "value": 5, "mask": 5},
     ]
 
@@ -1316,7 +1316,7 @@ def test_generate_ctrace_run_disables_dwt_synchronization_with_zero() -> None:
         {"period": "DWT\\16M"},
     ],
 )
-def test_generate_ctrace_run_defaults_synchronization_without_dwt_to_256m(
+def test_generate_ctrace_run_defaults_synchronization_without_dwt_to_16m(
     synchronization: dict[str, Any],
 ) -> None:
     output = cast(
@@ -1335,7 +1335,7 @@ def test_generate_ctrace_run_defaults_synchronization_without_dwt_to_256m(
             "ctrace-ref": "synchronization",
             "type": "dwt",
             "regs": [
-                {"name": "DWT_CTRL", "value": 3 << 10, "mask": 0xC00},
+                {"name": "DWT_CTRL", "value": 1 << 10, "mask": 0xC00},
                 {"name": "ITM_TCR", "value": 5, "mask": 5},
             ],
             "stream": 1,
@@ -1362,7 +1362,7 @@ def test_generate_ctrace_run_ignores_and_preserves_additional_properties() -> No
         {"name": "DWT_CTRL", "value": 0, "mask": 1 << 12}
     ]
     assert refs["CM4/synchronization"]["regs"] == [
-        {"name": "DWT_CTRL", "value": 3 << 10, "mask": 0xC00},
+        {"name": "DWT_CTRL", "value": 1 << 10, "mask": 0xC00},
         {"name": "ITM_TCR", "value": 5, "mask": 5},
     ]
 
