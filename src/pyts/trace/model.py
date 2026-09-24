@@ -18,7 +18,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 
 from pyts.domain import JsonValue, YamlMapping
@@ -94,11 +94,19 @@ class TraceSetupResult:
     target: str
     symbols: list[str]
     missing: list[str]
+    diagnostics: frozenset[str] = frozenset()
 
     def to_dict(self) -> dict[str, str | list[str]]:
-        """Return this summary as a plain JSON/YAML-compatible mapping."""
+        """Return the existing CLI summary without internal diagnostic status."""
 
-        return asdict(self)
+        return {
+            "cbuild_run": self.cbuild_run,
+            "ctrace": self.ctrace,
+            "output": self.output,
+            "target": self.target,
+            "symbols": list(self.symbols),
+            "missing": list(self.missing),
+        }
 
 
 @dataclass(frozen=True)

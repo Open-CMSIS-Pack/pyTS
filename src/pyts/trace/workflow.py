@@ -26,7 +26,7 @@ from pyts.errors import MissingSymbolsError
 from pyts.symbols import SymbolCatalog
 from pyts.trace.model import TraceSetupResult
 from pyts.trace.project import load_trace_project, required_mapping
-from pyts.trace.transform import transform_trace_document
+from pyts.trace.transform import mapping_refs, transform_trace_document
 from pyts.yaml_io import read_yaml, write_yaml
 
 
@@ -72,6 +72,18 @@ def setup_trace(
         target=project.target,
         symbols=transformed.symbols,
         missing=transformed.missing,
+        diagnostics=_output_diagnostics(output),
+    )
+
+
+def _output_diagnostics(document: YamlMapping) -> frozenset[str]:
+    """Find error and warning fields in the document that was written."""
+
+    return frozenset(
+        level
+        for ref in mapping_refs(document)
+        for level in ("error", "warning")
+        if isinstance(ref.value.get(level), str)
     )
 
 

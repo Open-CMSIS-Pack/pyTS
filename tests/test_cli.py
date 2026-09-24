@@ -114,6 +114,7 @@ def test_top_level_help_documents_trace_setup(
     assert "Generate a CMSIS trace run configuration." in captured.out
     assert "cbuild_run" in captured.out
     assert "--allow-missing" in captured.out
+    assert "--pedantic" in captured.out
 
 
 @pytest.mark.parametrize("option", ["-V", "--version"])
