@@ -28,7 +28,7 @@ from pyts.yaml_io import read_yaml
 
 
 def load_trace_project(cbuild_run_path: Path) -> TraceProject:
-    """Load cbuild metadata and derive all trace project paths."""
+    """Load cbuild metadata and derive the preferred trace project paths."""
 
     cbuild_run = required_mapping(read_yaml(cbuild_run_path), "cbuild-run file")
     data = required_mapping(cbuild_run.get("cbuild-run"), "cbuild-run")
@@ -40,13 +40,20 @@ def load_trace_project(cbuild_run_path: Path) -> TraceProject:
             .removesuffix(".csolution")
     )
     target = target_name(data)
+    trace_name = f"{solution_name}+{target}"
+    ctrace_path = root / ".cmsis" / f"{trace_name}.ctrace.yml"
+    output_path = root / ".trace" / f"{trace_name}.ctrace-run.yml"
+    temporary_ctrace_path = ctrace_path.with_name(f"~{ctrace_path.name}")
+    if temporary_ctrace_path.exists():
+        ctrace_path = temporary_ctrace_path
+        output_path = output_path.with_name(f"~{output_path.name}")
     return TraceProject(
         cbuild_run_path=cbuild_run_path,
         cbuild_run=data,
         project_root=root,
         target=target,
-        ctrace_path=root / ".cmsis" / f"{solution_name}+{target}.ctrace.yml",
-        output_path=root / ".trace" / f"{solution_name}+{target}.ctrace-run.yml",
+        ctrace_path=ctrace_path,
+        output_path=output_path,
         symbol_files=tuple(symbol_files(cbuild_run_path, data, root)),
     )
 
