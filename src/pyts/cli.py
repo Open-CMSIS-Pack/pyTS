@@ -42,7 +42,9 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         Process-style status code. Successful trace setup returns ``0``.
         Missing symbols, file errors, ELF parsing errors, and validation errors
-        are reported on stderr and return ``2``.
+        are reported on stderr and return ``2``. Written ``error`` diagnostics
+        also return ``2``; with ``--pedantic``, written ``warning`` diagnostics
+        do too.
     """
 
     parser = build_parser()
@@ -94,6 +96,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write the ctrace-run file even if some symbols are unresolved.",
     )
     parser.add_argument(
+        "--pedantic",
+        action="store_true",
+        help="Return a nonzero status for generated warnings as well as errors.",
+    )
+    parser.add_argument(
         "--format",
         choices=("yaml", "json"),
         default="yaml",
@@ -108,6 +115,10 @@ def _handle_trace_setup(args: argparse.Namespace) -> int:
 
     result = setup_trace(args.cbuild_run, allow_missing=args.allow_missing)
     _dump(result.to_dict(), sys.stdout, args.format)
+    if "error" in result.diagnostics or (
+        args.pedantic and "warning" in result.diagnostics
+    ):
+        return 2
     return 0
 
 

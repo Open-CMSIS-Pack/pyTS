@@ -63,6 +63,13 @@ Generate a trace run configuration from a CMSIS cbuild-run file:
 pyts <cbuild-run.yml>
 ```
 
+The command returns status `0` when generation succeeds without `error`
+entries. If the written trace run file contains an `error`, it returns `2`.
+Use `--pedantic` to also return `2` for `warning` entries; `info` entries do
+not affect the status. The file and result summary are still written when
+generation reports these diagnostics. `--allow-missing` permits writing the
+file with unresolved symbols, but any resulting `error` still returns `2`.
+
 The command reads `.cmsis/<solution>+<target-type>[@<target-set>].ctrace.yml`, resolves
 symbols from the cbuild-run ELF outputs, and writes the generated trace setup to
 `.trace/<solution>+<target-type>[@<target-set>].ctrace-run.yml`.
