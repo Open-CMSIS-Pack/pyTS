@@ -262,7 +262,9 @@ def test_setup_trace_derives_paths_and_enriches_ctrace(
 
     result = setup_trace(cbuild_run)
 
+    ctrace = project / ".cmsis" / f"{trace_name}.ctrace.yml"
     output = project / ".trace" / f"{trace_name}.ctrace-run.yml"
+    assert result.ctrace == str(ctrace)
     assert result.output == str(output)
     assert result.target == "NUCLEO-L552ZE-Q@SWO"
     assert result.symbols == ["main", "osRtxInfo.thread.run.curr"]
@@ -287,6 +289,44 @@ def test_setup_trace_derives_paths_and_enriches_ctrace(
             ]
         }
     }
+
+
+def test_setup_trace_prefers_temporary_ctrace_and_output(tmp_path: Path) -> None:
+    project, cbuild_run, trace_name = _write_trace_project(tmp_path)
+    temporary_ctrace = project / ".cmsis" / f"~{trace_name}.ctrace.yml"
+    temporary_output = project / ".trace" / f"~{trace_name}.ctrace-run.yml"
+    production_output = project / ".trace" / f"{trace_name}.ctrace-run.yml"
+    temporary_document = {"ctrace": {"temporary": True}}
+    production_document = {"ctrace-run": {"production": True}}
+    write_yaml(temporary_ctrace, temporary_document)
+    production_output.parent.mkdir()
+    write_yaml(production_output, production_document)
+
+    result = setup_trace(cbuild_run)
+
+    assert result.ctrace == str(temporary_ctrace)
+    assert result.output == str(temporary_output)
+    assert read_yaml(temporary_output) == temporary_document
+    assert read_yaml(production_output) == production_document
+
+
+def test_setup_trace_does_not_fall_back_from_invalid_temporary_ctrace(
+    tmp_path: Path,
+) -> None:
+    project, cbuild_run, trace_name = _write_trace_project(tmp_path)
+    temporary_ctrace = project / ".cmsis" / f"~{trace_name}.ctrace.yml"
+    temporary_output = project / ".trace" / f"~{trace_name}.ctrace-run.yml"
+    production_output = project / ".trace" / f"{trace_name}.ctrace-run.yml"
+    production_document = {"ctrace-run": {"production": True}}
+    write_yaml(temporary_ctrace, ["not", "a", "mapping"])
+    production_output.parent.mkdir()
+    write_yaml(production_output, production_document)
+
+    with pytest.raises(ValueError, match="ctrace file must be a mapping"):
+        setup_trace(cbuild_run)
+
+    assert not temporary_output.exists()
+    assert read_yaml(production_output) == production_document
 
 
 def test_setup_trace_omits_unknown_resolved_symbol_type(
