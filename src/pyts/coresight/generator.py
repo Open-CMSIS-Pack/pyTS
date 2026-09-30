@@ -374,9 +374,9 @@ def _setup_refs(
 def _with_prefix(ref: YamlMapping, prefix: str | None) -> YamlMapping:
     """Apply an optional setup prefix to a generated reference name."""
 
-    name = ref["ctrace-ref"]
+    name = ref["ref"]
     if prefix is not None:
-        ref["ctrace-ref"] = f"{prefix}/{name}"
+        ref["ref"] = f"{prefix}/{name}"
     return ref
 
 
@@ -434,7 +434,7 @@ def _initial_feature_ref(
 ) -> YamlMapping:
     """Create the common metadata for a generated feature reference."""
 
-    ref: YamlMapping = {"ctrace-ref": ref_name, "type": _feature_type(feature)}
+    ref: YamlMapping = {"ref": ref_name, "type": _feature_type(feature)}
     if ref_pname is not None:
         ref["pname"] = ref_pname
     return ref
@@ -654,12 +654,12 @@ def _append_implicit_itm_refs(
     """Add generated ITM references for setups without explicit ITM data."""
 
     for processor, setup in implicit_itm_refs.items():
-        ref: YamlMapping = {"ctrace-ref": "itm", "type": "itm"}
+        ref: YamlMapping = {"ref": "itm", "type": "itm"}
         if len(processors) > 1:
             ref["pname"] = processor.pname
         setup_pname = setup.get("pname")
         if isinstance(setup_pname, str) and setup_pname:
-            ref["ctrace-ref"] = f"{setup_pname}/itm"
+            ref["ref"] = f"{setup_pname}/itm"
         ref["regs"] = cast(
             JsonValue,
             [_reg("ITM_TCR", processor_ids[processor] << _ITM_TRACE_BUS_ID_POS,
@@ -672,9 +672,9 @@ def _append_implicit_itm_refs(
 def _ref_sort_key(ref: YamlMapping) -> tuple[object, ...]:
     """Return a natural, case-sensitive sort key for a trace reference."""
 
-    name = ref["ctrace-ref"]
+    name = ref["ref"]
     if not isinstance(name, str):
-        raise TypeError("ctrace-ref must be a string")
+        raise TypeError("ref must be a string")
     return tuple(
         (1, int(part)) if part.isdigit() else (0, part)
         for part in re.split(r"(\d+)", name)

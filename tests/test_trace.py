@@ -652,9 +652,9 @@ def test_setup_trace_generates_coresight_register_settings(
     assert run["ctrace-setup"] == ctrace["ctrace"]["setup"]
     refs = output["ctrace-run"]["ctrace-refs"]
     assert output["ctrace-run"]["generated-by"] == f"pyTS v{package_version()}"
-    refs_by_name = {ref["ctrace-ref"]: ref for ref in refs}
+    refs_by_name = {ref["ref"]: ref for ref in refs}
     assert refs_by_name["timestamps"] == {
-        "ctrace-ref": "timestamps",
+        "ref": "timestamps",
         "type": "dwt",
         "regs": [{"name": "ITM_TCR", "value": 0x103, "mask": 0x303}],
         "stream": 1,
@@ -676,7 +676,7 @@ def test_setup_trace_generates_coresight_register_settings(
         {"name": "ITM_TCR", "value": 9, "mask": 9},
     ]
     assert refs_by_name["exceptions"] == {
-        "ctrace-ref": "exceptions",
+        "ref": "exceptions",
         "type": "exception",
         "regs": [
             {"name": "DWT_CTRL", "value": 1 << 16, "mask": 1 << 16},
@@ -780,7 +780,7 @@ def test_setup_trace_scopes_refs_and_reports_unsupported_core(
     assert output["ctrace-run"]["ctrace-setup"] == ctrace["ctrace"]["setup"]
     assert output["ctrace-run"]["ctrace-refs"] == [
         {
-            "ctrace-ref": "application/itm",
+            "ref": "application/itm",
             "type": "itm",
             "pname": "application",
             "source": [0],
@@ -792,7 +792,7 @@ def test_setup_trace_scopes_refs_and_reports_unsupported_core(
             "stream": 1,
         },
         {
-            "ctrace-ref": "network/exceptions",
+            "ref": "network/exceptions",
             "type": "exception",
             "pname": "network",
             "error": "core CM0PLUS has no architectural ITM/DWT trace support",
@@ -840,7 +840,7 @@ def test_generate_ctrace_run_sorts_refs_naturally_by_name() -> None:
         [Processor.from_core("CM4", "CM4")],
     )
 
-    assert [ref["ctrace-ref"] for ref in run["ctrace-refs"]] == [
+    assert [ref["ref"] for ref in run["ctrace-refs"]] == [
         *(f"data#{index}" for index in range(11)),
         "exceptions",
         "timestamps",
@@ -900,7 +900,7 @@ def test_generate_ctrace_run_skips_null_sequence_entries_without_renumbering(
         [Processor.from_core("CM4", None)],
     )
 
-    assert run["ctrace-refs"][0]["ctrace-ref"] == expected_ref
+    assert run["ctrace-refs"][0]["ref"] == expected_ref
 
 
 def test_generate_ctrace_run_preserves_null_presence_flags() -> None:
@@ -909,7 +909,7 @@ def test_generate_ctrace_run_preserves_null_presence_flags() -> None:
         [Processor.from_core("CM4", None)],
     )
 
-    refs = {ref["ctrace-ref"]: ref for ref in run["ctrace-refs"]}
+    refs = {ref["ref"]: ref for ref in run["ctrace-refs"]}
     assert {"timestamps", "timesync", "exceptions"} <= refs.keys()
     assert refs["timesync"]["error"] == (
         "timesync trace register generation is not supported"
@@ -938,7 +938,7 @@ def test_generate_ctrace_run_defaults_null_optional_feature_properties() -> None
         [Processor.from_core("CM4", None)],
     )
 
-    refs = {ref["ctrace-ref"]: ref for ref in run["ctrace-refs"]}
+    refs = {ref["ref"]: ref for ref in run["ctrace-refs"]}
     assert run["ctrace-setup"][0]["itm"]["atbid"] == 1
     assert refs["timestamps"]["regs"][0]["value"] == 3
     assert refs["itm"]["regs"][1] == {
@@ -1028,7 +1028,7 @@ def test_generate_ctrace_run_propagates_implicit_atbid_to_data_itm_tcr() -> None
 
     assert run["ctrace-setup"][0]["itm"] == {"atbid": 1}
     assert run["ctrace-refs"][-1] == {
-        "ctrace-ref": "CM4/itm",
+        "ref": "CM4/itm",
         "type": "itm",
         "regs": [
             {"name": "ITM_TCR", "value": 0x10000, "mask": 0x7F0000}
@@ -1372,7 +1372,7 @@ def test_generate_ctrace_run_defaults_synchronization_without_dwt_to_16m(
     )
     assert output["ctrace-run"]["ctrace-refs"] == [
         {
-            "ctrace-ref": "synchronization",
+            "ref": "synchronization",
             "type": "dwt",
             "regs": [
                 {"name": "DWT_CTRL", "value": 1 << 10, "mask": 0xC00},
@@ -1397,7 +1397,7 @@ def test_generate_ctrace_run_ignores_and_preserves_additional_properties() -> No
     assert run["ctrace-setup"] == [setup]
     assert all("error" not in ref for ref in run["ctrace-refs"])
     assert all("extension" not in ref for ref in run["ctrace-refs"])
-    refs = {ref["ctrace-ref"]: ref for ref in run["ctrace-refs"]}
+    refs = {ref["ref"]: ref for ref in run["ctrace-refs"]}
     assert refs["CM4/pcsampling"]["regs"] == [
         {"name": "DWT_CTRL", "value": 0, "mask": 1 << 12}
     ]
