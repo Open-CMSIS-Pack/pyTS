@@ -70,7 +70,7 @@ ctrace:
         list[dict[str, Any]],
         yaml.safe_load(
             """\
-- ctrace-ref: CM7/events
+- ref: CM7/events
   type: event
   pname: CM7
   error: events entry must contain an event name
@@ -79,5 +79,5 @@ ctrace:
     )
     refs = cast(list[dict[str, Any]], run["ctrace-refs"])
 
-    reported_ref_names = {ref["ctrace-ref"] for ref in reported_output}
+    reported_ref_names = {ref["ref"] for ref in reported_output}
     assert all(ref["ref"] not in reported_ref_names for ref in refs)

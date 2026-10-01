@@ -47,7 +47,7 @@ ctrace:
         list[dict[str, Any]],
         yaml.safe_load(
             """\
-  - ctrace-ref: CM7/pcsampling
+  - ref: CM7/pcsampling
     type: pcsample
     pname: CM7
     error: 'unsupported pcsampling.period: 192'
