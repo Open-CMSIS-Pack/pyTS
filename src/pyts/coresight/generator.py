@@ -25,11 +25,14 @@ from typing import NoReturn, cast
 
 from pyts._version import package_version
 from pyts.coresight.model import (
+    ComparatorAllocator,
     CoreSight,
     DataMatch,
     DataTraceRequest,
+    DwtCapabilities,
     DwtVersion,
     RegisterWrite,
+    dwt_capabilities_for_core,
     dwt_version_for_core,
     processor_class,
 )
@@ -60,6 +63,12 @@ class Processor:
                 f"DWT version for core {self.core!r} must be "
                 f"{expected.value if expected is not None else None}"
             )
+
+    @property
+    def dwt_capabilities(self) -> DwtCapabilities:
+        """Return the DWT capabilities derived from this processor core."""
+
+        return dwt_capabilities_for_core(self.core)
 
     @classmethod
     def from_core(cls, core: str, pname: str | None) -> Processor:
@@ -156,10 +165,14 @@ def processors_from_cbuild(cbuild_run: YamlMapping) -> list[Processor]:
 def create_coresight(processor: Processor) -> CoreSight | None:
     """Create the architectural CoreSight implementation for a processor."""
 
+    capabilities = processor.dwt_capabilities
+    if capabilities.trace_slots == 0:
+        return None
+    comparators = ComparatorAllocator(limit=capabilities.trace_slots)
     if processor.dwt_version == DwtVersion.V1:
-        return DwtV1CoreSight(processor.core)
+        return DwtV1CoreSight(processor.core, comparators)
     if processor.dwt_version == DwtVersion.V2:
-        return DwtV2CoreSight(processor.core)
+        return DwtV2CoreSight(processor.core, comparators)
     return None
 
 
@@ -201,9 +214,64 @@ def generate_ctrace_run(
         "ctrace-run": {
             "generated-by": generated_by,
             "ctrace-setup": _hexify_addresses(output_setups),
+            "ctrace-disable": cast(
+                JsonValue,
+                _generate_ctrace_disable(processors),
+            ),
             "ctrace-refs": cast(JsonValue, refs),
         }
     }
+
+
+def _generate_ctrace_disable(
+    processors: list[Processor],
+) -> list[YamlMapping] | None:
+    """Generate setup-independent trace disable writes per processor."""
+
+    entries: list[YamlMapping] = []
+    multi_processor = len(processors) > 1
+    for processor in processors:
+        registers = _disable_registers(processor.dwt_capabilities)
+        if not registers:
+            continue
+        entry: YamlMapping = {}
+        if multi_processor:
+            if processor.pname is None:
+                raise ValueError(
+                    "ctrace-disable requires pname for every processor in a "
+                    "multi-processor target"
+                )
+            entry["pname"] = processor.pname
+        entry["regs"] = cast(JsonValue, registers)
+        entries.append(entry)
+    return entries or None
+
+
+def _disable_registers(
+    capabilities: DwtCapabilities,
+) -> list[YamlMapping]:
+    """Return register writes that disable all modeled DWT resources."""
+
+    if capabilities.total_slots == 0:
+        return []
+    registers: list[YamlMapping] = []
+    if capabilities.trace_slots:
+        registers.extend(
+            [
+                _reg("ITM_TER0", 0),
+                _reg("ITM_TPR", 0),
+                _reg("ITM_TCR", 0),
+                _reg("DWT_CTRL", 0, 0x007F1FFE),
+            ]
+        )
+    for index in range(capabilities.total_slots):
+        registers.append(_reg(f"DWT_COMP{index}", 0))
+        if capabilities.version == DwtVersion.V1:
+            registers.append(_reg(f"DWT_MASK{index}", 0))
+        registers.append(_reg(f"DWT_FUNCTION{index}", 0))
+        if capabilities.version == DwtVersion.V2:
+            registers.append(_reg(f"DWT_VMASK{index}", 0))
+    return registers
 
 
 def _select_processors(

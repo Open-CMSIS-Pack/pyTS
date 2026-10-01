@@ -32,7 +32,9 @@ from pyts.coresight.model import (
     DataMatch,
     DataOutput,
     DataTraceRequest,
+    DwtCapabilities,
     DwtVersion,
+    dwt_capabilities_for_core,
     normalize_core,
     processor_class,
 )
@@ -648,7 +650,12 @@ def test_setup_trace_generates_coresight_register_settings(
     output_path = project / ".trace" / f"{trace_name}.ctrace-run.yml"
     output = read_yaml(output_path)
     run = output["ctrace-run"]
-    assert set(run) == {"generated-by", "ctrace-setup", "ctrace-refs"}
+    assert set(run) == {
+        "generated-by",
+        "ctrace-setup",
+        "ctrace-disable",
+        "ctrace-refs",
+    }
     assert run["ctrace-setup"] == ctrace["ctrace"]["setup"]
     refs = output["ctrace-run"]["ctrace-refs"]
     assert output["ctrace-run"]["generated-by"] == f"pyTS v{package_version()}"
@@ -701,6 +708,8 @@ def test_setup_trace_generates_coresight_register_settings(
     ]
     assert all(ref["stream"] == 1 for ref in refs)
     output_text = output_path.read_text(encoding="utf-8")
+    assert "ctrace-disable:\n" in output_text
+    assert "mask: 0x007f1ffe" in output_text
     assert "address: 0x08000100" in output_text
     assert "symbol-address:" not in output_text
     assert "value: 0x00000103" in output_text
@@ -743,13 +752,17 @@ def test_generate_ctrace_run_uses_original_setup_when_provided() -> None:
         ),
     )
 
-    assert output == {
-        "ctrace-run": {
-            "generated-by": f"pyTS v{package_version()}",
-            "ctrace-setup": original_setup,
-            "ctrace-refs": [],
-        }
+    run = output["ctrace-run"]
+    assert set(run) == {
+        "generated-by",
+        "ctrace-setup",
+        "ctrace-disable",
+        "ctrace-refs",
     }
+    assert run["generated-by"] == f"pyTS v{package_version()}"
+    assert run["ctrace-setup"] == original_setup
+    assert run["ctrace-disable"] is not None
+    assert run["ctrace-refs"] == []
 
 
 def test_setup_trace_scopes_refs_and_reports_unsupported_core(
@@ -1124,7 +1137,7 @@ def test_generate_ctrace_run_encodes_atbid_in_itm_trace_bus_id() -> None:
         ("SC000", "SecurCore SC000", None),
         ("SC300", "SecurCore SC300", DwtVersion.V1),
         ("CM0", "Cortex-M0", None),
-        ("CM0+", "Cortex-M0+", None),
+        ("CM0+", "Cortex-M0+", DwtVersion.V1),
         ("CM1", "Cortex-M1", None),
         ("CM23", "Cortex-M23", DwtVersion.V2),
         ("CM3", "Cortex-M3", DwtVersion.V1),
@@ -1149,6 +1162,199 @@ def test_core_metadata_uses_normalized_device_literals(
     assert normalize_core(display.swapcase()) == literal
     assert processor_class(literal) == display
     assert Processor.from_core(literal, None).dwt_version == version
+
+
+@pytest.mark.parametrize(
+    ("core", "version", "trace_slots", "match_slots"),
+    [
+        ("CM0", None, 0, 0),
+        ("Cortex-M0+", DwtVersion.V1, 0, 2),
+        ("CM23", DwtVersion.V2, 0, 2),
+        ("CM3", DwtVersion.V1, 4, 0),
+        ("CM4", DwtVersion.V1, 4, 0),
+        ("CM7", DwtVersion.V1, 4, 0),
+        ("CM33", DwtVersion.V2, 4, 0),
+        ("SecurCore SC300", DwtVersion.V1, 4, 0),
+        ("Cortex-M35P", DwtVersion.V2, 4, 0),
+        ("STAR-MC1", DwtVersion.V2, 4, 0),
+        ("STAR-MC3", DwtVersion.V2, 4, 0),
+        ("CM52", DwtVersion.V2, 4, 4),
+        ("CM55", DwtVersion.V2, 4, 4),
+        ("CM85", DwtVersion.V2, 4, 4),
+        ("CA53", None, 0, 0),
+    ],
+)
+def test_dwt_capabilities_derive_from_processor_core(
+    core: str,
+    version: DwtVersion | None,
+    trace_slots: int,
+    match_slots: int,
+) -> None:
+    capabilities = dwt_capabilities_for_core(core)
+
+    assert capabilities.version == version
+    assert capabilities.trace_slots == trace_slots
+    assert capabilities.match_slots == match_slots
+    assert capabilities.total_slots == trace_slots + match_slots
+
+
+@pytest.mark.parametrize(
+    ("version", "trace_slots", "match_slots", "error"),
+    [
+        (DwtVersion.V1, -1, 0, "must not be negative"),
+        (None, 1, 0, "require a register layout version"),
+    ],
+)
+def test_dwt_capabilities_reject_invalid_slot_descriptions(
+    version: DwtVersion | None,
+    trace_slots: int,
+    match_slots: int,
+    error: str,
+) -> None:
+    with pytest.raises(ValueError, match=error):
+        DwtCapabilities(version, trace_slots, match_slots)
+
+
+@pytest.mark.parametrize(
+    ("core", "expected_names"),
+    [
+        ("CM0", []),
+        (
+            "CM0+",
+            [
+                "DWT_COMP0",
+                "DWT_MASK0",
+                "DWT_FUNCTION0",
+                "DWT_COMP1",
+                "DWT_MASK1",
+                "DWT_FUNCTION1",
+            ],
+        ),
+        (
+            "CM23",
+            [
+                "DWT_COMP0",
+                "DWT_FUNCTION0",
+                "DWT_VMASK0",
+                "DWT_COMP1",
+                "DWT_FUNCTION1",
+                "DWT_VMASK1",
+            ],
+        ),
+        (
+            "CM4",
+            [
+                "ITM_TER0",
+                "ITM_TPR",
+                "ITM_TCR",
+                "DWT_CTRL",
+                *[
+                    name
+                    for index in range(4)
+                    for name in (
+                        f"DWT_COMP{index}",
+                        f"DWT_MASK{index}",
+                        f"DWT_FUNCTION{index}",
+                    )
+                ],
+            ],
+        ),
+        (
+            "CM55",
+            [
+                "ITM_TER0",
+                "ITM_TPR",
+                "ITM_TCR",
+                "DWT_CTRL",
+                *[
+                    name
+                    for index in range(8)
+                    for name in (
+                        f"DWT_COMP{index}",
+                        f"DWT_FUNCTION{index}",
+                        f"DWT_VMASK{index}",
+                    )
+                ],
+            ],
+        ),
+    ],
+)
+def test_generate_ctrace_run_disables_all_dwt_slots(
+    core: str,
+    expected_names: list[str],
+) -> None:
+    run = _generated_run([], [Processor.from_core(core, None)])
+
+    disable_value = run["ctrace-disable"]
+    if not expected_names:
+        assert disable_value is None
+        return
+    assert isinstance(disable_value, list)
+    disable = cast(list[dict[str, Any]], disable_value)
+    assert len(disable) == 1
+    assert "pname" not in disable[0]
+    registers = cast(list[dict[str, Any]], disable[0]["regs"])
+    assert [register["name"] for register in registers] == expected_names
+    assert all(register["value"] == 0 for register in registers)
+    masked_registers = [
+        register for register in registers if "mask" in register
+    ]
+    expected_masked_registers = (
+        [{"name": "DWT_CTRL", "value": 0, "mask": 0x007F1FFE}]
+        if "DWT_CTRL" in expected_names
+        else []
+    )
+    assert masked_registers == expected_masked_registers
+
+
+def test_generate_ctrace_run_scopes_disable_groups_by_processor() -> None:
+    processors = [
+        Processor.from_core("CM4", "application"),
+        Processor.from_core("CM55", "network"),
+    ]
+
+    run = _generated_run([], processors)
+
+    assert [entry["pname"] for entry in run["ctrace-disable"]] == [
+        "application",
+        "network",
+    ]
+
+
+def test_generate_ctrace_run_requires_pname_for_multi_processor_disable() -> None:
+    processors = [
+        Processor.from_core("CM4", None),
+        Processor.from_core("CM55", "network"),
+    ]
+
+    with pytest.raises(ValueError, match="requires pname"):
+        _generated_run([], processors)
+
+
+def test_generate_ctrace_run_disable_is_independent_of_feature_setup() -> None:
+    processor = Processor.from_core("CM55", None)
+
+    empty = _generated_run([], [processor])
+    disabled = _generated_run([{"disable": None}], [processor])
+    configured = _generated_run(
+        [{"data": [{"address": 0x20000000}], "itm": {"enable": 1}}],
+        [processor],
+    )
+
+    assert empty["ctrace-disable"] == disabled["ctrace-disable"]
+    assert empty["ctrace-disable"] == configured["ctrace-disable"]
+
+
+def test_generate_ctrace_run_writes_valueless_empty_disable(tmp_path: Path) -> None:
+    output = generate_ctrace_run(
+        {"ctrace": {"setup": []}},
+        [Processor.from_core("CM0", None)],
+    )
+    output_path = tmp_path / "empty.ctrace-run.yml"
+
+    write_yaml(output_path, output)
+
+    assert "  ctrace-disable:\n" in output_path.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize(
@@ -2421,7 +2627,7 @@ def test_generate_ctrace_run_rejects_cortex_m23_data_trace() -> None:
     )
 
     assert refs[0]["error"] == (
-        "Cortex-M23 DWT-Unit does not support data trace packets"
+        "core Cortex-M23 has no architectural ITM/DWT trace support"
     )
     assert "regs" not in refs[0]
 
@@ -2449,7 +2655,8 @@ def test_generate_ctrace_run_enforces_dwtv2_value_comparator_position() -> None:
 
     assert "index 0 through 3" in refs[4]["error"]
     assert "regs" not in refs[4]
-    assert refs[5]["regs"][0]["name"] == "DWT_COMP4"
+    assert "0 of 4 trace-capable slots remain" in refs[5]["error"]
+    assert "regs" not in refs[5]
 
 
 def test_linked_value_output_enforces_comparator_position_without_allocation() -> None:
@@ -2479,7 +2686,32 @@ def test_linked_value_output_enforces_comparator_position_without_allocation() -
 
     assert "index 0 through 3" in refs[4]["error"]
     assert "regs" not in refs[4]
-    assert refs[5]["regs"][0]["name"] == "DWT_COMP4"
+    assert "0 of 4 trace-capable slots remain" in refs[5]["error"]
+    assert "regs" not in refs[5]
+
+
+@pytest.mark.parametrize("core", ["CM52", "CM55", "CM85"])
+def test_data_trace_does_not_allocate_additional_match_slots(core: str) -> None:
+    _output, refs = _generate_data_refs(
+        [
+            {
+                "location": f"address_{index}",
+                "address": 0x20000000 + index * 4,
+                "output": "PC",
+            }
+            for index in range(5)
+        ],
+        Processor.from_core(core, None),
+    )
+
+    assert [ref["regs"][0]["name"] for ref in refs[:4]] == [
+        "DWT_COMP0",
+        "DWT_COMP1",
+        "DWT_COMP2",
+        "DWT_COMP3",
+    ]
+    assert "0 of 4 trace-capable slots remain" in refs[4]["error"]
+    assert "regs" not in refs[4]
 
 
 def test_invalid_coresight_request_does_not_consume_comparators() -> None:
