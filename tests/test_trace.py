@@ -660,7 +660,7 @@ def test_setup_trace_generates_coresight_register_settings(
         "stream": 1,
     }
     assert refs_by_name["data#0"]["type"] == "dwt"
-    assert refs_by_name["data#0"]["source"] == 0
+    assert refs_by_name["data#0"]["index"] == 0
     assert refs_by_name["data#0"]["address"] == 0x08000100
     assert refs_by_name["data#0"]["symbol-file"].endswith("/Blinky.axf")
     assert refs_by_name["data#0"]["size"] == 64
@@ -694,7 +694,7 @@ def test_setup_trace_generates_coresight_register_settings(
         {"name": "ITM_TPR", "value": 1, "mask": 0xF},
         {"name": "ITM_TCR", "value": 0x10001, "mask": 0x7F0001},
     ]
-    assert refs_by_name["itm"]["source"] == [0, 1, 2, 3]
+    assert refs_by_name["itm"]["index"] == [0, 1, 2, 3]
     assert refs_by_name["synchronization"]["regs"] == [
         {"name": "DWT_CTRL", "value": 1 << 10, "mask": 0xC00},
         {"name": "ITM_TCR", "value": 5, "mask": 5},
@@ -783,7 +783,7 @@ def test_setup_trace_scopes_refs_and_reports_unsupported_core(
             "ref": "application/itm",
             "type": "itm",
             "pname": "application",
-            "source": [0],
+            "index": [0],
             "regs": [
                 {"name": "ITM_TER0", "value": 1},
                 {"name": "ITM_TPR", "value": 0, "mask": 0xF},
@@ -1202,7 +1202,7 @@ def test_generate_ctrace_run_uses_dwtv2_comparator_model() -> None:
         {"name": "DWT_FUNCTION0", "value": 0x82D},
         {"name": "ITM_TCR", "value": 9, "mask": 9},
     ]
-    assert output["ctrace-run"]["ctrace-refs"][0]["source"] == 0
+    assert output["ctrace-run"]["ctrace-refs"][0]["index"] == 0
 
 
 @pytest.mark.parametrize(
@@ -1666,7 +1666,7 @@ def test_generate_ctrace_run_supports_dwtv1_output_modes(
         "name": "DWT_FUNCTION0",
         "value": expected_function,
     }
-    assert refs[0]["source"] == 0
+    assert refs[0]["index"] == 0
 
 
 @pytest.mark.parametrize(
@@ -1784,7 +1784,7 @@ def test_generate_ctrace_run_supports_dwtv2_single_comparator_outputs(
         Processor(core="CM33", pname=None, dwt_version=2),
     )
 
-    assert refs[0]["source"] == 0
+    assert refs[0]["index"] == 0
     assert refs[0]["regs"] == [
         {"name": "DWT_COMP0", "value": 0x20000000},
         {"name": "DWT_FUNCTION0", "value": expected_function},
@@ -1868,7 +1868,7 @@ def test_generate_ctrace_run_supports_dwtv2_linked_value_match(
         {"name": "DWT_FUNCTION1", "value": value_function},
         {"name": "ITM_TCR", "value": 9, "mask": 9},
     ]
-    assert refs[0]["source"] == [0, 1]
+    assert refs[0]["index"] == [0, 1]
 
 
 @pytest.mark.parametrize(
@@ -1969,7 +1969,7 @@ def test_generate_ctrace_run_allocates_mixed_data_comparators() -> None:
         "DWT_COMP3",
     ]
     assert refs[1]["regs"][2]["name"] == "DWT_COMP2"
-    assert [ref["source"] for ref in refs] == [0, [1, 2], 3]
+    assert [ref["index"] for ref in refs] == [0, [1, 2], 3]
 
 
 def test_generate_ctrace_run_allocates_comparators_per_processor() -> None:
@@ -2026,7 +2026,7 @@ def test_generate_ctrace_run_allocates_comparators_per_processor() -> None:
         "DWT_COMP1",
         "DWT_COMP1",
     ]
-    assert [ref["source"] for ref in dwt_refs] == [[0, 1], [0, 1]]
+    assert [ref["index"] for ref in dwt_refs] == [[0, 1], [0, 1]]
     assert [ref["pname"] for ref in dwt_refs] == ["application", "network"]
 
 

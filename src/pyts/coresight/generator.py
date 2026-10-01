@@ -489,11 +489,11 @@ def _complete_feature_ref(
     if ref["type"] == "dwt":
         source = _dwt_source(regs)
         if source is not None:
-            ref["source"] = cast(JsonValue, source)
+            ref["index"] = cast(JsonValue, source)
     if feature == "itm":
         source = _itm_source(value)
         if len(source) > 0:
-            ref["source"] = cast(JsonValue, source)
+            ref["index"] = cast(JsonValue, source)
     streamed = bool(regs) and (
         _FEATURE_SPECS[feature].streamed or _regs_enable_itm(regs)
     )
