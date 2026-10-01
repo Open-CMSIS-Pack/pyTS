@@ -47,7 +47,7 @@ ctrace:
         list[dict[str, Any]],
         yaml.safe_load(
             """\
-  - ctrace-ref: CM7/pcsampling
+  - ref: CM7/pcsampling
     type: pcsample
     pname: CM7
     error: 'unsupported pcsampling.period: 192'
@@ -58,10 +58,10 @@ ctrace:
 
     assert reported_output[0] not in refs
     pcsampling_ref = next(
-        ref for ref in refs if ref["ctrace-ref"] == "CM7/pcsampling"
+        ref for ref in refs if ref["ref"] == "CM7/pcsampling"
     )
     assert pcsampling_ref == {
-        "ctrace-ref": "CM7/pcsampling",
+        "ref": "CM7/pcsampling",
         "type": "pcsample",
         "pname": "CM7",
         "regs": [
