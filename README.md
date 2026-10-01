@@ -78,11 +78,32 @@ prefers it and writes `.trace/~<solution>+<target-type>[@<target-set>].ctrace-ru
 instead, leaving the production trace files unchanged.
 
 When `cbuild-run.system-resources.processors` is available, pyTS uses each
-processor's `core` and `pname` to generate CMSIS `ctrace-run.ctrace-refs` entries.
-Their `regs` lists contain masked architectural ITM and DWT register writes for
-ITM channels, timestamps, basic DWTv1/DWTv2 data trace, exception trace, event
-trace, PC sampling, and DWT synchronization. Unsupported processor or feature
-combinations are reported on the corresponding reference with `error`.
+processor's `core` and `pname` to generate CMSIS `ctrace-run.ctrace-disable` and
+`ctrace-run.ctrace-refs` entries. The disable entries clear all modeled DWT
+comparators before active references are applied. Their content is independent
+of the selected trace features, allowing a debugger to turn off settings that
+were removed while an interactive session was running. Active reference `regs`
+lists contain masked architectural ITM and DWT register writes for ITM channels,
+timestamps, basic DWTv1/DWTv2 data trace, exception trace, event trace, PC
+sampling, and DWT synchronization. Unsupported processor or feature combinations
+are reported on the corresponding reference with `error`.
+
+DWT capabilities are derived from the processor core because `cbuild-run` does
+not provide comparator counts. Trace slots can be allocated for data trace;
+additional match slots are disabled by `ctrace-disable` but reserved for future
+instruction-trace start/stop support.
+
+Core | Trace slots | Additional match slots
+:----|------------:|-----------------------:
+Cortex-M0 | 0 | 0
+Cortex-M0+, Cortex-M23 | 0 | 2
+Cortex-M3, Cortex-M4, Cortex-M7, Cortex-M33 | 4 | 0
+SecurCore SC300, Cortex-M35P, STAR-MC1, STAR-MC3 | 4 | 0
+Cortex-M52, Cortex-M55, Cortex-M85 | 4 | 4
+Other or unknown cores | 0 | 0
+
+The data-trace allocator never consumes the additional match slots. Requests
+that exceed the trace-slot count are reported on the corresponding reference.
 Optional `null` values in trace lists and objects are treated as not configured;
 for optional properties they are treated as omitted and use the documented
 default. In particular, `synchronization.DWT` defaults to `16M`. The
@@ -101,9 +122,10 @@ their tags and encodings, such as `signed`, `unsigned`, `bool`, `float`,
 `pointer`, `array`, and `struct`; source-language type names are not emitted.
 When a symbol type cannot be deduced from DWARF, `symbol-type` is omitted.
 Addresses and register values and masks are written as 32-bit hexadecimal YAML
-integers. The generated
-`ctrace-run` mapping contains only `generated-by`, `ctrace-setup`, and
-`ctrace-refs`; other source `ctrace` properties are not copied.
+integers. The generated `ctrace-run` mapping contains only `generated-by`,
+`ctrace-setup`, `ctrace-disable`, and `ctrace-refs`; other source `ctrace`
+properties are not copied. If no processor has DWT resources,
+`ctrace-disable` is emitted without children.
 Location-style and legacy `symbol`/`address` entries may coexist in one trace
 document; pyTS resolves both styles in document order using the same ELF cache.
 PC sampling periods use integer CPU-cycle counts: `0` disables sampling, while

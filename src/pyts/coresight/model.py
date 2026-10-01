@@ -33,6 +33,29 @@ class DwtVersion(IntEnum):
     V2 = 2
 
 
+@dataclass(frozen=True)
+class DwtCapabilities:
+    """Core-derived DWT register layout and comparator capacities."""
+
+    version: DwtVersion | None
+    trace_slots: int
+    match_slots: int
+
+    def __post_init__(self) -> None:
+        """Validate the static capability description."""
+
+        if self.trace_slots < 0 or self.match_slots < 0:
+            raise ValueError("DWT slot counts must not be negative")
+        if self.total_slots and self.version is None:
+            raise ValueError("DWT slots require a register layout version")
+
+    @property
+    def total_slots(self) -> int:
+        """Return all DWT comparator slots that must be disabled."""
+
+        return self.trace_slots + self.match_slots
+
+
 _CORE_ALIAS_GROUPS: dict[str, tuple[str, ...]] = {
     "MC1": ("MC1", "STAR-MC1"),
     "MC3": ("MC3", "STAR-MC3"),
@@ -83,19 +106,22 @@ _PROCESSOR_CLASSES = {
     "ARMV81MML": "ARMV81MML",
 }
 
-_DWT_VERSIONS = {
-    "CM3": DwtVersion.V1,
-    "CM4": DwtVersion.V1,
-    "CM7": DwtVersion.V1,
-    "SC300": DwtVersion.V1,
-    "MC1": DwtVersion.V2,
-    "MC3": DwtVersion.V2,
-    "CM23": DwtVersion.V2,
-    "CM33": DwtVersion.V2,
-    "CM35P": DwtVersion.V2,
-    "CM52": DwtVersion.V2,
-    "CM55": DwtVersion.V2,
-    "CM85": DwtVersion.V2,
+_NO_DWT_CAPABILITIES = DwtCapabilities(None, 0, 0)
+
+_DWT_CAPABILITIES = {
+    "CM0+": DwtCapabilities(DwtVersion.V1, 0, 2),
+    "CM23": DwtCapabilities(DwtVersion.V2, 0, 2),
+    "CM3": DwtCapabilities(DwtVersion.V1, 4, 0),
+    "CM4": DwtCapabilities(DwtVersion.V1, 4, 0),
+    "CM7": DwtCapabilities(DwtVersion.V1, 4, 0),
+    "SC300": DwtCapabilities(DwtVersion.V1, 4, 0),
+    "MC1": DwtCapabilities(DwtVersion.V2, 4, 0),
+    "MC3": DwtCapabilities(DwtVersion.V2, 4, 0),
+    "CM33": DwtCapabilities(DwtVersion.V2, 4, 0),
+    "CM35P": DwtCapabilities(DwtVersion.V2, 4, 0),
+    "CM52": DwtCapabilities(DwtVersion.V2, 4, 4),
+    "CM55": DwtCapabilities(DwtVersion.V2, 4, 4),
+    "CM85": DwtCapabilities(DwtVersion.V2, 4, 4),
 }
 
 
@@ -257,6 +283,7 @@ class RegisterWrite:
 class ComparatorAllocator:
     """Allocate DWT comparators for one generation session."""
 
+    limit: int | None = None
     next_index: int = 0
 
     def allocate(
@@ -267,8 +294,15 @@ class ComparatorAllocator:
 
         if count <= 0:
             raise ValueError("comparator allocation count must be positive")
-        indices = list(range(self.next_index, self.next_index + count))
-        self.next_index += count
+        end_index = self.next_index + count
+        if self.limit is not None and end_index > self.limit:
+            remaining = max(self.limit - self.next_index, 0)
+            raise ValueError(
+                f"DWT data trace requires {count} comparator slots, but only "
+                f"{remaining} of {self.limit} trace-capable slots remain"
+            )
+        indices = list(range(self.next_index, end_index))
+        self.next_index = end_index
         return indices
 
 
@@ -315,10 +349,16 @@ def processor_class(core: str) -> str:
 def dwt_version_for_core(core: str) -> DwtVersion | None:
     """Return the DWT generation for a known processor spelling."""
 
+    return dwt_capabilities_for_core(core).version
+
+
+def dwt_capabilities_for_core(core: str) -> DwtCapabilities:
+    """Return static DWT capabilities for a known processor spelling."""
+
     normalized = normalize_core(core)
     if normalized is None:
-        return None
-    return _DWT_VERSIONS.get(normalized)
+        return _NO_DWT_CAPABILITIES
+    return _DWT_CAPABILITIES.get(normalized, _NO_DWT_CAPABILITIES)
 
 
 def _integer(value: JsonValue) -> int | None:
