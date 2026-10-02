@@ -64,11 +64,11 @@ jobs:
         run: python -m build
 
       - name: Build executable
-        run: pyinstaller --clean --noconfirm --name pyTS src/pyts/__main__.py
+        run: pyinstaller --clean --noconfirm --onefile --name pyTS src/pyts/__main__.py
 
       - name: Archive executable
         id: archive
-        working-directory: dist/pyTS
+        working-directory: dist
         shell: bash
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.VERSION }}
@@ -76,10 +76,10 @@ jobs:
           archive_prefix="pyTS-${PACKAGE_VERSION}"
           if [[ "${{ matrix.os }}" == "windows" ]]; then
             archive="${archive_prefix}-${{ matrix.os }}-${{ matrix.arch }}.zip"
-            7z a "../$archive" .
+            7z a "$archive" pyTS.exe
           else
             archive="${archive_prefix}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz"
-            tar -czf "../$archive" .
+            tar -czf "$archive" pyTS
           fi
           echo "ARCHIVE=$archive" >> "$GITHUB_OUTPUT"
 
