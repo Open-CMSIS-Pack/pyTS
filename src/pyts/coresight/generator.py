@@ -105,7 +105,7 @@ class FeatureSpec:
     ref_type: str
     repeated: bool = False
     streamed: bool = False
-    null_activates: bool = False
+    null_as_empty_mapping: bool = False
     sequence: bool = False
 
 
@@ -120,15 +120,15 @@ class _GeneratedRef:
 
 
 _FEATURE_SPECS = {
-    "timestamps": FeatureSpec("dwt", null_activates=True),
-    "timesync": FeatureSpec("global_ts", null_activates=True),
+    "timestamps": FeatureSpec("dwt", null_as_empty_mapping=True),
+    "timesync": FeatureSpec("global_ts", null_as_empty_mapping=True),
     "data": FeatureSpec("dwt", repeated=True, sequence=True),
-    "exceptions": FeatureSpec("exception", null_activates=True),
+    "exceptions": FeatureSpec("exception", null_as_empty_mapping=True),
     "events": FeatureSpec("event", repeated=True, sequence=True),
     "itm": FeatureSpec("itm"),
-    "pcsampling": FeatureSpec("pcsample"),
-    "synchronization": FeatureSpec("dwt"),
-    "instructions": FeatureSpec("dwt"),
+    "pcsampling": FeatureSpec("pcsample", null_as_empty_mapping=True),
+    "synchronization": FeatureSpec("dwt", null_as_empty_mapping=True),
+    "instructions": FeatureSpec("dwt", null_as_empty_mapping=True),
     "tracehalt": FeatureSpec("dwt", sequence=True),
 }
 
@@ -405,8 +405,10 @@ def _setup_refs(
         if feature not in setup:
             continue
         value = setup[feature]
-        if value is None and not spec.null_activates:
-            continue
+        if value is None:
+            if not spec.null_as_empty_mapping:
+                continue
+            value = {}
         if (
             spec.sequence
             and isinstance(value, list)

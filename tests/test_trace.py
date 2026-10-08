@@ -866,9 +866,6 @@ def test_generate_ctrace_run_sorts_refs_naturally_by_name() -> None:
         "data",
         "events",
         "itm",
-        "pcsampling",
-        "synchronization",
-        "instructions",
         "tracehalt",
     ],
 )
@@ -927,6 +924,33 @@ def test_generate_ctrace_run_preserves_null_presence_flags() -> None:
     assert refs["timesync"]["error"] == (
         "timesync trace register generation is not supported"
     )
+
+
+@pytest.mark.parametrize(
+    "feature",
+    [
+        "timestamps",
+        "timesync",
+        "exceptions",
+        "pcsampling",
+        "synchronization",
+        "instructions",
+    ],
+)
+def test_generate_ctrace_run_treats_null_as_empty_optional_mapping(
+    feature: str,
+) -> None:
+    null_run = _generated_run(
+        [{feature: None}],
+        [Processor.from_core("CM4", None)],
+    )
+    empty_run = _generated_run(
+        [{feature: {}}],
+        [Processor.from_core("CM4", None)],
+    )
+
+    assert null_run["ctrace-refs"] == empty_run["ctrace-refs"]
+    assert null_run["ctrace-setup"][0][feature] is None
 
 
 def test_generate_ctrace_run_treats_null_disable_as_present() -> None:
@@ -1486,7 +1510,7 @@ def test_generate_ctrace_run_rejects_invalid_pc_sampling_period_literals(
     assert "regs" not in ref
 
 
-@pytest.mark.parametrize("pcsampling", [{}, {"period": None}, {"period": 0}])
+@pytest.mark.parametrize("pcsampling", [None, {}, {"period": None}, {"period": 0}])
 def test_generate_ctrace_run_disables_pc_sampling_by_default_or_zero(
     pcsampling: Any,
 ) -> None:
@@ -1553,6 +1577,7 @@ def test_generate_ctrace_run_disables_dwt_synchronization_with_zero() -> None:
 @pytest.mark.parametrize(
     "synchronization",
     [
+        None,
         {},
         {"DWT": None},
         {"extension": None},
@@ -1563,7 +1588,7 @@ def test_generate_ctrace_run_disables_dwt_synchronization_with_zero() -> None:
     ],
 )
 def test_generate_ctrace_run_defaults_synchronization_without_dwt_to_16m(
-    synchronization: dict[str, Any],
+    synchronization: dict[str, Any] | None,
 ) -> None:
     output = cast(
         dict[str, Any],

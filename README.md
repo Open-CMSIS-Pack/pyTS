@@ -104,11 +104,13 @@ Other or unknown cores | 0 | 0
 
 The data-trace allocator never consumes the additional match slots. Requests
 that exceed the trace-slot count are reported on the corresponding reference.
-Optional `null` values in trace lists and objects are treated as not configured;
-for optional properties they are treated as omitted and use the documented
-default. In particular, `synchronization.DWT` defaults to `16M`. The
-presence-only `disable`, `timestamps`, `timesync`, and `exceptions` nodes retain
-their meaning when empty.
+Optional `null` values in trace lists and setup elements with required children
+are treated as not configured. A `null` setup element with no required children
+is treated as an empty mapping and uses the documented defaults; this applies to
+`timestamps`, `timesync`, `exceptions`, `pcsampling`, `synchronization`, and
+`instructions`. Within configured objects, optional `null` properties are
+treated as omitted. In particular, `synchronization.DWT` defaults to `16M`.
+The presence-only `disable` node retains its meaning when empty.
 Additional properties in `ctrace` configurations are preserved but ignored,
 allowing future schema extensions without validation failures. Property names
 remain case-sensitive: an incorrectly cased optional property is ignored,
