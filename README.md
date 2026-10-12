@@ -77,6 +77,14 @@ If a `.cmsis/~<solution>+<target-type>[@<target-set>].ctrace.yml` file exists, p
 prefers it and writes `.trace/~<solution>+<target-type>[@<target-set>].ctrace-run.yml`
 instead, leaving the production trace files unchanged.
 
+For symbol locations that pyTS resolves, generated `symbol-file:` entries are
+relative to the directory containing the generated trace output. The
+`.cbuild-run.yml` input remains unchanged, so its `output[].file` paths keep
+their CMSIS-Toolbox-defined base directory. This is intentionally different
+from the current CMSIS-Toolbox `ctrace-run` schema, which specifies an
+absolute `symbol-file:` path; pyTS retains an absolute path only when the host
+cannot express a relative path (for example, across Windows volumes).
+
 When `cbuild-run.system-resources.processors` is available, pyTS uses each
 processor's `core` and `pname` to generate CMSIS `ctrace-run.ctrace-disable` and
 `ctrace-run.ctrace-refs` entries. The disable entries clear all modeled DWT
