@@ -30,6 +30,15 @@ from pyts.domain import YamlMapping
 from pyts.yaml_io import read_yaml
 
 
+_SYNCHRONIZATION_DEFAULT_REF = {
+    "ref": "synchronization/DWT", "type": "dwt", "stream": 1,
+    "regs": [
+        {"name": "DWT_CTRL", "value": 0x400, "mask": 0xC00},
+        {"name": "ITM_TCR", "value": 5, "mask": 5},
+    ],
+}
+
+
 def _generate_run(
     tmp_path: Path,
     source: str,
@@ -55,38 +64,60 @@ def _generate_run(
 
 @pytest.mark.parametrize("core", ["CM4", "CM33"])
 @pytest.mark.parametrize(
-    ("mode", "value", "mask"),
+    ("mode", "value"),
     [
-        ("off", 0, 0xC00),
-        ('"off"', 0, 0xC00),
-        ("128", 0x401, 0xC01),
-        ('"128"', 0x401, 0xC01),
-        ("0x80", 0x401, 0xC01),
-        ("8192", 0x801, 0xC01),
-        ('"8192"', 0x801, 0xC01),
-        ("0x2000", 0x801, 0xC01),
-        ("packet", 0xC01, 0xC01),
+        ("off", 0),
+        ("'off'", 0),
+        ('"off"', 0),
+        ("128", 0x401),
+        ('"128"', 0x401),
+        ("0x80", 0x401),
+        ("8192", 0x801),
+        ('"8192"', 0x801),
+        ("0x2000", 0x801),
+        ("packet", 0xC01),
     ],
 )
 def test_issue_1269_encodes_itm_global_timestamp_modes(
-    tmp_path: Path, core: str, mode: str, value: int, mask: int
+    tmp_path: Path, core: str, mode: str, value: int
 ) -> None:
     run = _generate_run(
         tmp_path,
         f"ctrace:\n  setup:\n    - timesync:\n        ITM: {mode}\n",
         [Processor.from_core(core, None)],
     )
-    expected: dict[str, Any] = {
-        "ref": "timesync/ITM",
-        "type": "global_ts",
-        "regs": [{"name": "ITM_TCR", "value": value, "mask": mask}],
-    }
+    expected: list[dict[str, Any]] = [_SYNCHRONIZATION_DEFAULT_REF]
     if value:
-        expected["stream"] = 1
-    assert run["ctrace-refs"] == [expected]
+        expected.append({
+            "ref": "timesync/ITM", "type": "global_ts", "stream": 1,
+            "regs": [{"name": "ITM_TCR", "value": value, "mask": 0xC01}],
+        })
+    assert run["ctrace-refs"] == expected
     assert run["ctrace-setup"][0]["timesync"]["ITM"] == {
         0: "off", 0x401: "128", 0x801: "8192", 0xC01: "packet",
     }[value]
+
+
+@pytest.mark.parametrize("pname", [None, "core"])
+@pytest.mark.parametrize("mode", ["off", "'off'", '"off"'])
+def test_issue_1269_off_uses_initial_disable_without_allocating_a_stream(
+    tmp_path: Path, pname: str | None, mode: str,
+) -> None:
+    path = tmp_path / "source.ctrace.yml"
+    pname_line = "" if pname is None else f"      pname: {pname}\n"
+    path.write_text(
+        f"ctrace:\n  setup:\n    - timesync:\n        ITM: {mode}\n"
+        f"{pname_line}      synchronization:\n        DWT: off\n",
+        encoding="utf-8",
+    )
+    document = read_yaml(path)
+    before = deepcopy(document)
+    output = generate_ctrace_run(document, [Processor.from_core("CM4", "core")])
+    run = cast(dict[str, Any], output["ctrace-run"])
+    assert run["ctrace-refs"] == []
+    assert {"name": "ITM_TCR", "value": 0} in run["ctrace-disable"][0]["regs"]
+    assert run["ctrace-setup"] == before["ctrace"]["setup"]
+    assert document == before
 
 
 @pytest.mark.parametrize(
@@ -108,13 +139,7 @@ def test_issue_1269_defaults_absent_and_empty_timesync_to_off(
         f"ctrace:\n  setup:\n    - {setup}\n",
         [Processor.from_core("CM4", None)],
     )
-    assert run["ctrace-refs"] == [
-        {
-            "ref": "timesync/ITM",
-            "type": "global_ts",
-            "regs": [{"name": "ITM_TCR", "value": 0, "mask": 0xC00}],
-        }
-    ]
+    assert run["ctrace-refs"] == [_SYNCHRONIZATION_DEFAULT_REF]
 
 
 @pytest.mark.parametrize(
@@ -130,7 +155,7 @@ def test_issue_1269_rejects_invalid_itm_modes(tmp_path: Path, mode: str) -> None
         f"ctrace:\n  setup:\n    - timesync:\n        ITM: {mode}\n",
         [Processor.from_core("CM4", None)],
     )
-    ref = run["ctrace-refs"][0]
+    ref = next(ref for ref in run["ctrace-refs"] if ref["ref"] == "timesync/ITM")
     assert ref["ref"] == "timesync/ITM"
     assert "timesync.ITM" in ref["error"]
     assert "regs" not in ref
@@ -147,6 +172,7 @@ def test_issue_1269_rejects_invalid_timesync_containers(
         [Processor.from_core("CM4", None)],
     )
     assert run["ctrace-refs"] == [
+        _SYNCHRONIZATION_DEFAULT_REF,
         {"ref": "timesync/ITM", "type": "global_ts", "error": "timesync must be a mapping"}
     ]
 
@@ -174,7 +200,9 @@ ctrace:
     )
     refs = {ref["ref"]: ref for ref in run["ctrace-refs"]}
     assert set(refs) == {
-        "application/itm", "application/timesync/ITM", "network/itm", "network/timesync/ITM"
+        f"{pname}/{feature}"
+        for pname in ("application", "network")
+        for feature in ("itm", "synchronization/DWT", "timesync/ITM")
     }
     for pname, value, stream in [("application", 0x801, 1), ("network", 0xC01, 2)]:
         assert refs[f"{pname}/timesync/ITM"] == {
@@ -187,6 +215,10 @@ ctrace:
         assert refs[f"{pname}/itm"]["regs"] == [
             {"name": "ITM_TCR", "value": stream << 16, "mask": 0x7F0000}
         ]
+        assert refs[f"{pname}/synchronization/DWT"] == {
+            **_SYNCHRONIZATION_DEFAULT_REF,
+            "ref": f"{pname}/synchronization/DWT", "pname": pname, "stream": stream,
+        }
 
 
 def test_issue_1269_default_preserves_other_itm_features(tmp_path: Path) -> None:
@@ -203,10 +235,7 @@ ctrace:
         [Processor.from_core("CM4", None)],
     )
     refs = {ref["ref"]: ref for ref in run["ctrace-refs"]}
-    assert refs["timesync/ITM"]["regs"] == [
-        {"name": "ITM_TCR", "value": 0, "mask": 0xC00}
-    ]
-    assert "stream" not in refs["timesync/ITM"]
+    assert "timesync/ITM" not in refs
     assert refs["timestamps"]["stream"] == refs["itm"]["stream"] == 7
     assert refs["timestamps"]["regs"] == [
         {"name": "ITM_TCR", "value": 3, "mask": 0x303}
@@ -225,13 +254,20 @@ def test_issue_1269_preserves_unsupported_core_diagnostics(
         f"ctrace:\n  setup:\n    - {setup}\n",
         [Processor.from_core("CM0", None)],
     )
-    assert run["ctrace-refs"] == [
+    expected = [
         {
+            "ref": "synchronization/DWT",
+            "type": "dwt",
+            "error": "core CM0 has no architectural ITM/DWT trace support",
+        },
+    ]
+    if setup != "{}":
+        expected.append({
             "ref": "timesync/ITM",
             "type": "global_ts",
             "error": "core CM0 has no architectural ITM/DWT trace support",
-        }
-    ]
+        })
+    assert run["ctrace-refs"] == expected
 
 
 def test_issue_1269_does_not_create_missing_setups(tmp_path: Path) -> None:
@@ -269,8 +305,12 @@ cbuild-run:
     assert output["ctrace-run"]["ctrace-setup"][0]["timesync"]["ITM"] == (
         mode.strip('"')
     )
-    assert "error" not in output["ctrace-run"]["ctrace-refs"][0]
-    assert output["ctrace-run"]["ctrace-refs"][0]["ref"] == "timesync/ITM"
+    refs = {ref["ref"]: ref for ref in output["ctrace-run"]["ctrace-refs"]}
+    if mode == "off":
+        assert "timesync/ITM" not in refs
+    else:
+        assert "error" not in refs["timesync/ITM"]
+    assert refs["synchronization/DWT"] == _SYNCHRONIZATION_DEFAULT_REF
     assert "mask: 0x00000c" in output_path.read_text(encoding="utf-8")
 
 
