@@ -30,12 +30,6 @@ from pyts.domain import YamlMapping
 from pyts.yaml_io import read_yaml
 
 
-_TIMESYNC_OFF_REF = {
-    "ref": "timesync/ITM", "type": "global_ts",
-    "regs": [{"name": "ITM_TCR", "value": 0, "mask": 0xC00}],
-}
-
-
 def _generate(tmp_path: Path, setup: str, core: str = "CM4") -> dict[str, Any]:
     path = tmp_path / "trace.yml"
     path.write_text(f"ctrace:\n  setup:\n    - {setup}\n", encoding="utf-8")
@@ -74,30 +68,29 @@ def test_dwt_modes_reference_the_complete_feature_path(
         setup = f"pname: {pname}\n      {setup}"
     run = _generate(tmp_path, setup)
     ref_name = "synchronization/DWT" if pname is None else f"{pname}/synchronization/DWT"
-    regs = (
-        [{"name": "ITM_TCR", "value": 0, "mask": 4}]
-        if encoding == 0 else [
+    refs = [ref for ref in run["ctrace-refs"] if ref["ref"] == ref_name]
+    if encoding:
+        assert len(refs) == 1
+        assert refs[0]["type"] == "dwt"
+        assert refs[0]["regs"] == [
             {"name": "DWT_CTRL", "value": encoding << 10, "mask": 0xC00},
             {"name": "ITM_TCR", "value": 5, "mask": 5},
         ]
-    )
-    refs = [ref for ref in run["ctrace-refs"] if ref["ref"] == ref_name]
-    assert len(refs) == 1
-    assert refs[0]["type"] == "dwt"
-    assert refs[0]["regs"] == regs
-    if encoding:
         assert refs[0]["stream"] == 1
     else:
-        assert "stream" not in refs[0]
+        assert run["ctrace-refs"] == []
+        assert {"name": "ITM_TCR", "value": 0} in run["ctrace-disable"][0]["regs"]
     assert all(ref["ref"] != "synchronization" for ref in run["ctrace-refs"])
     assert run["ctrace-setup"][0]["synchronization"]["DWT"] == normalized
 
 
 @pytest.mark.parametrize("setup", [
-    "synchronization:", "synchronization: {}", "synchronization:\n        DWT:",
+    "{}", "synchronization:", "synchronization: {}", "synchronization:\n        DWT:",
     "synchronization:\n        extension: future", "synchronization:\n        dwt: 64M",
 ])
-def test_configured_group_defaults_missing_dwt_to_16m(tmp_path: Path, setup: str) -> None:
+def test_missing_dwt_defaults_to_16m_regardless_of_group_presence(
+    tmp_path: Path, setup: str,
+) -> None:
     assert _generate(tmp_path, setup)["ctrace-refs"] == [
         {
             "ref": "synchronization/DWT", "type": "dwt", "stream": 1,
@@ -106,12 +99,38 @@ def test_configured_group_defaults_missing_dwt_to_16m(tmp_path: Path, setup: str
                 {"name": "ITM_TCR", "value": 5, "mask": 5},
             ],
         },
-        _TIMESYNC_OFF_REF,
     ]
 
 
-def test_absent_synchronization_group_does_not_generate_default(tmp_path: Path) -> None:
-    assert _generate(tmp_path, "{}")["ctrace-refs"] == [_TIMESYNC_OFF_REF]
+@pytest.mark.parametrize("use_original", [False, True])
+@pytest.mark.parametrize("pname", [None, "core"])
+def test_absent_feature_groups_use_defaults_without_adding_yaml_nodes(
+    tmp_path: Path, use_original: bool, pname: str | None,
+) -> None:
+    path = tmp_path / "trace.yml"
+    setup = "itm:\n        enable: 0\n        atbid: 7"
+    if pname is not None:
+        setup = f"pname: {pname}\n      {setup}"
+    path.write_text(f"ctrace:\n  setup:\n    - {setup}\n", encoding="utf-8")
+    document = read_yaml(path)
+    original = deepcopy(document) if use_original else None
+    before = deepcopy(document)
+    output = generate_ctrace_run(document, [Processor.from_core("CM4", "core")], original)
+    run = cast(dict[str, Any], output["ctrace-run"])
+    prefix = f"{pname}/" if pname else ""
+    refs = {ref["ref"]: ref for ref in run["ctrace-refs"]}
+    assert refs[f"{prefix}synchronization/DWT"] == {
+        "ref": f"{prefix}synchronization/DWT", "type": "dwt", "stream": 7,
+        "regs": [
+            {"name": "DWT_CTRL", "value": 0x400, "mask": 0xC00},
+            {"name": "ITM_TCR", "value": 5, "mask": 5},
+        ],
+    }
+    assert f"{prefix}timesync/ITM" not in refs
+    assert run["ctrace-setup"] == before["ctrace"]["setup"]
+    assert document == before
+    if original is not None:
+        assert original == before
 
 
 @pytest.mark.parametrize("core", ["CM4", "CM0"])
@@ -125,9 +144,6 @@ def test_invalid_group_has_feature_reference_and_preserves_error_precedence(
     )
     assert _generate(tmp_path, f"synchronization: {container}", core)["ctrace-refs"] == [
         {"ref": "synchronization/DWT", "type": "dwt", "error": error},
-        _TIMESYNC_OFF_REF if core == "CM4" else {
-            "ref": "timesync/ITM", "type": "global_ts", "error": error,
-        },
     ]
 
 
@@ -151,11 +167,7 @@ synchronization:
         sync-on-run: true
         extension: future
 """)
-    assert run["ctrace-refs"] == [
-        {"ref": "synchronization/DWT", "type": "dwt",
-         "regs": [{"name": "ITM_TCR", "value": 0, "mask": 4}]},
-        _TIMESYNC_OFF_REF,
-    ]
+    assert run["ctrace-refs"] == []
 
 
 @pytest.mark.parametrize("use_original", [False, True])
@@ -191,10 +203,6 @@ ctrace:
     }]
     assert all("error" not in ref for ref in run["ctrace-refs"])
     assert [ref for ref in run["ctrace-refs"] if ref["ref"] != "itm"] == [
-        {
-            "ref": "synchronization/DWT", "type": "dwt",
-            "regs": [{"name": "ITM_TCR", "value": 0, "mask": 4}],
-        },
         {
             "ref": "timesync/ITM", "type": "global_ts", "stream": 1,
             "regs": [{"name": "ITM_TCR", "value": 0x401, "mask": 0xC01}],
@@ -259,10 +267,4 @@ cbuild-run:
     output = read_yaml(tmp_path / ".trace" / "Blinky+Target.ctrace-run.yml")
     run = output["ctrace-run"]
     assert run["ctrace-setup"][0]["synchronization"]["DWT"] == expected
-    assert run["ctrace-refs"] == [
-        {
-            "ref": "synchronization/DWT", "type": "dwt",
-            "regs": [{"name": "ITM_TCR", "value": 0, "mask": 4}],
-        },
-        _TIMESYNC_OFF_REF,
-    ]
+    assert run["ctrace-refs"] == []

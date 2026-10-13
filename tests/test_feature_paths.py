@@ -30,12 +30,16 @@ from pyts.domain import JsonValue, YamlMapping
 from pyts.yaml_io import read_yaml
 
 
-def _first_encoder(value: JsonValue, _coresight: CoreSight) -> list[YamlMapping]:
-    return [{"name": "FIRST", "value": value}]
+def _first_encoder(value: JsonValue, _coresight: CoreSight | None) -> list[YamlMapping]:
+    return [{"name": "FIRST", "value": 0 if value is None else value}]
 
 
-def _second_encoder(value: JsonValue, _coresight: CoreSight) -> list[YamlMapping]:
+def _second_encoder(value: JsonValue, _coresight: CoreSight | None) -> list[YamlMapping]:
     return [{"name": "SECOND", "value": 0 if value is None else value}]
+
+
+def _empty_encoder(_value: JsonValue, _coresight: CoreSight | None) -> list[YamlMapping]:
+    return []
 
 
 @pytest.fixture
@@ -108,26 +112,11 @@ pname: core
         "group:\n        extension: ignored", '"group.first": 7',
     ],
 )
-def test_missing_and_null_group_features_are_skipped(tmp_path: Path, setup: str) -> None:
-    assert _generate(tmp_path, setup)["ctrace-refs"] == []
-
-
-@pytest.mark.parametrize(
-    "setup",
-    [
-        "{}", "group:", "group: {}", "group:\n        nested:",
-        "group:\n        nested:\n          second:",
-    ],
-)
-def test_default_feature_is_generated_when_its_path_is_absent(
-    tmp_path: Path,
-    grouped_features: dict[str, generator.FeatureSpec],
-    setup: str,
+def test_missing_and_null_group_features_use_encoder_defaults(
+    tmp_path: Path, setup: str,
 ) -> None:
-    grouped_features["group.nested.second"] = generator.FeatureSpec(
-        "second", generate_when_absent=True,
-    )
     assert _generate(tmp_path, setup)["ctrace-refs"] == [
+        {"ref": "group/first", "type": "first", "regs": [{"name": "FIRST", "value": 0}]},
         {
             "ref": "group/nested/second", "type": "second",
             "regs": [{"name": "SECOND", "value": 0}],
@@ -136,30 +125,44 @@ def test_default_feature_is_generated_when_its_path_is_absent(
 
 
 @pytest.mark.parametrize(
-    ("setup", "has_default"),
+    "setup",
     [
-        ("{}", False), ("group:", False), ("group: {}", False),
-        ("group:\n        nested:", True),
-        ("group:\n        nested: {}", True),
-        ("group:\n        nested:\n          second:", True),
+        "{}", "group:", "group: {}", "group:\n        nested:",
+        "group:\n        nested: {}", "group:\n        first: 7",
+        "group:\n        nested:\n          second:",
     ],
 )
-def test_group_default_requires_the_immediate_group_to_be_configured(
+@pytest.mark.usefixtures("grouped_features")
+def test_feature_defaults_are_independent_of_group_and_sibling_presence(
     tmp_path: Path,
-    grouped_features: dict[str, generator.FeatureSpec],
     setup: str,
-    has_default: bool,
 ) -> None:
-    grouped_features["group.nested.second"] = generator.FeatureSpec(
-        "second", generate_when_group_present=True,
-    )
-    expected = [
+    assert _generate(tmp_path, setup)["ctrace-refs"] == [
+        {
+            "ref": "group/first", "type": "first",
+            "regs": [{"name": "FIRST", "value": 7 if "first: 7" in setup else 0}],
+        },
         {
             "ref": "group/nested/second", "type": "second",
             "regs": [{"name": "SECOND", "value": 0}],
         },
-    ] if has_default else []
-    assert _generate(tmp_path, setup)["ctrace-refs"] == expected
+    ]
+
+
+@pytest.mark.parametrize("core", ["CM4", "CM0"])
+def test_default_without_register_writes_does_not_create_a_reference(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, core: str,
+) -> None:
+    monkeypatch.setattr(generator, "_FEATURE_SPECS", {"group.empty": generator.FeatureSpec("empty")})
+    monkeypatch.setattr(generator, "_FEATURE_ENCODERS", {"group.empty": _empty_encoder})
+    path = tmp_path / "trace.yml"
+    path.write_text("ctrace:\n  setup:\n    - {}\n", encoding="utf-8")
+    document = read_yaml(path)
+    output = generator.generate_ctrace_run(document, [generator.Processor.from_core(core, None)])
+    run = output["ctrace-run"]
+    assert isinstance(run, dict)
+    assert run["ctrace-refs"] == []
+    assert document == read_yaml(path)
 
 
 @pytest.mark.usefixtures("grouped_features")
@@ -206,5 +209,9 @@ def test_grouped_repeated_feature_keeps_list_indices(
         {
             "ref": "core/group/first#2", "type": "first",
             "regs": [{"name": "FIRST", "value": 11}],
+        },
+        {
+            "ref": "core/group/nested/second", "type": "second",
+            "regs": [{"name": "SECOND", "value": 0}],
         },
     ]

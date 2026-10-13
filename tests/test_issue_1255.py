@@ -51,8 +51,12 @@ ctrace:
             "error": "instructions trace register generation is not supported",
         },
         {
-            "ref": "timesync/ITM",
-            "type": "global_ts",
-            "regs": [{"name": "ITM_TCR", "value": 0, "mask": 0xC00}],
+            "ref": "synchronization/DWT",
+            "type": "dwt",
+            "stream": 1,
+            "regs": [
+                {"name": "DWT_CTRL", "value": 0x400, "mask": 0xC00},
+                {"name": "ITM_TCR", "value": 5, "mask": 5},
+            ],
         },
     ]

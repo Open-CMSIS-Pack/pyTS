@@ -746,12 +746,8 @@ def test_setup_trace_generates_coresight_register_settings(
         {"name": "DWT_CTRL", "value": 1 << 10, "mask": 0xC00},
         {"name": "ITM_TCR", "value": 5, "mask": 5},
     ]
-    assert refs_by_name["timesync/ITM"] == {
-        "ref": "timesync/ITM",
-        "type": "global_ts",
-        "regs": [{"name": "ITM_TCR", "value": 0, "mask": 0xC00}],
-    }
-    assert all(ref["stream"] == 1 for ref in refs if ref["ref"] != "timesync/ITM")
+    assert "timesync/ITM" not in refs_by_name
+    assert all(ref["stream"] == 1 for ref in refs)
     output_text = output_path.read_text(encoding="utf-8")
     assert "ctrace-disable:\n" in output_text
     assert "mask: 0x007f1ffe" in output_text
@@ -850,10 +846,14 @@ def test_setup_trace_scopes_refs_and_reports_unsupported_core(
             "stream": 1,
         },
         {
-            "ref": "application/timesync/ITM",
-            "type": "global_ts",
+            "ref": "application/synchronization/DWT",
+            "type": "dwt",
             "pname": "application",
-            "regs": [{"name": "ITM_TCR", "value": 0, "mask": 0xC00}],
+            "stream": 1,
+            "regs": [
+                {"name": "DWT_CTRL", "value": 0x400, "mask": 0xC00},
+                {"name": "ITM_TCR", "value": 5, "mask": 5},
+            ],
         },
         {
             "ref": "network/exceptions",
@@ -862,8 +862,8 @@ def test_setup_trace_scopes_refs_and_reports_unsupported_core(
             "error": "core CM0PLUS has no architectural ITM/DWT trace support",
         },
         {
-            "ref": "network/timesync/ITM",
-            "type": "global_ts",
+            "ref": "network/synchronization/DWT",
+            "type": "dwt",
             "pname": "network",
             "error": "core CM0PLUS has no architectural ITM/DWT trace support",
         },
@@ -898,9 +898,9 @@ def test_generate_ctrace_run_assigns_smallest_free_atbids_per_processor() -> Non
     assert [(ref["ref"], ref.get("stream")) for ref in run["ctrace-refs"]] == [
         ("CM4/data#0", 1),
         ("CM4/itm", 1),
-        ("CM4/timesync/ITM", None),
+        ("CM4/synchronization/DWT", 1),
         ("CM7/itm", 2),
-        ("CM7/timesync/ITM", None),
+        ("CM7/synchronization/DWT", 2),
     ]
 
 
@@ -919,8 +919,8 @@ def test_generate_ctrace_run_sorts_refs_naturally_by_name() -> None:
     assert [ref["ref"] for ref in run["ctrace-refs"]] == [
         *(f"data#{index}" for index in range(11)),
         "exceptions",
+        "synchronization/DWT",
         "timestamps",
-        "timesync/ITM",
     ]
 
 
@@ -939,14 +939,25 @@ def test_generate_ctrace_run_skips_null_container_feature(feature: str) -> None:
         [Processor.from_core("CM4", "CM4")],
     )
 
-    assert run["ctrace-refs"] == [
+    expected = [
         {
-            "ref": "CM4/timesync/ITM",
-            "type": "global_ts",
-            "regs": [{"name": "ITM_TCR", "value": 0, "mask": 0xC00}],
-        }
+            "ref": "CM4/synchronization/DWT", "type": "dwt", "stream": 1,
+            "regs": [
+                {"name": "DWT_CTRL", "value": 0x400, "mask": 0xC00},
+                {"name": "ITM_TCR", "value": 5, "mask": 5},
+            ],
+        },
     ]
-    assert run["ctrace-setup"][0][feature] is None
+    if feature != "itm":
+        expected.insert(0, {
+            "ref": "CM4/itm", "type": "itm", "stream": 1,
+            "regs": [{"name": "ITM_TCR", "value": 0x10000, "mask": 0x7F0000}],
+        })
+    assert run["ctrace-refs"] == expected
+    if feature == "itm":
+        assert run["ctrace-setup"][0][feature] == {"atbid": 1}
+    else:
+        assert run["ctrace-setup"][0][feature] is None
 
 
 @pytest.mark.parametrize("feature", ["data", "events", "tracehalt"])
@@ -962,10 +973,12 @@ def test_generate_ctrace_run_skips_empty_sequence_feature(
 
     assert run["ctrace-refs"] == [
         {
-            "ref": "timesync/ITM",
-            "type": "global_ts",
-            "regs": [{"name": "ITM_TCR", "value": 0, "mask": 0xC00}],
-        }
+            "ref": "synchronization/DWT", "type": "dwt", "stream": 1,
+            "regs": [
+                {"name": "DWT_CTRL", "value": 0x400, "mask": 0xC00},
+                {"name": "ITM_TCR", "value": 5, "mask": 5},
+            ],
+        },
     ]
 
 
@@ -996,12 +1009,8 @@ def test_generate_ctrace_run_preserves_null_presence_flags() -> None:
     )
 
     refs = {ref["ref"]: ref for ref in run["ctrace-refs"]}
-    assert {"timestamps", "timesync/ITM", "exceptions"} <= refs.keys()
-    assert refs["timesync/ITM"] == {
-        "ref": "timesync/ITM",
-        "type": "global_ts",
-        "regs": [{"name": "ITM_TCR", "value": 0, "mask": 0xC00}],
-    }
+    assert {"timestamps", "exceptions"} <= refs.keys()
+    assert "timesync/ITM" not in refs
 
 
 @pytest.mark.parametrize(
@@ -1125,8 +1134,8 @@ def test_generate_ctrace_run_reuses_atbid_for_multiple_setups_of_processor() -> 
     assert [(ref["ref"], ref.get("stream")) for ref in run["ctrace-refs"]] == [
         ("CM4/exceptions", 1),
         ("CM4/itm", 1),
-        ("CM4/timesync/ITM", None),
-        ("CM4/timesync/ITM", None),
+        ("CM4/synchronization/DWT", 1),
+        ("CM4/synchronization/DWT", 1),
     ]
 
 
@@ -1165,7 +1174,7 @@ def test_generate_ctrace_run_does_not_assign_atbid_when_itm_is_disabled() -> Non
     )
 
     assert "itm" not in run["ctrace-setup"][0]
-    assert "stream" not in run["ctrace-refs"][0]
+    assert run["ctrace-refs"] == []
 
 
 def test_generate_ctrace_run_rejects_atbid_conflicts() -> None:
@@ -1653,9 +1662,9 @@ def test_generate_ctrace_run_disables_dwt_synchronization_with_zero() -> None:
         ),
     )
 
-    assert output["ctrace-run"]["ctrace-refs"][0]["regs"] == [
-        {"name": "ITM_TCR", "value": 0, "mask": 1 << 2}
-    ]
+    run = output["ctrace-run"]
+    assert run["ctrace-refs"] == []
+    assert {"name": "ITM_TCR", "value": 0} in run["ctrace-disable"][0]["regs"]
 
 
 @pytest.mark.parametrize("mode", ["off", "'off'"])
@@ -1681,12 +1690,8 @@ def test_generate_ctrace_run_disables_dwt_synchronization_with_yaml_off(
 
     assert run["ctrace-setup"] == document["ctrace"]["setup"]
     assert run["ctrace-setup"][0]["synchronization"]["DWT"] == "off"
-    assert run["ctrace-refs"][0] == {
-        "ref": "synchronization/DWT",
-        "type": "dwt",
-        "regs": [{"name": "ITM_TCR", "value": 0, "mask": 1 << 2}],
-    }
-    assert all("stream" not in ref for ref in run["ctrace-refs"])
+    assert run["ctrace-refs"] == []
+    assert {"name": "ITM_TCR", "value": 0} in run["ctrace-disable"][0]["regs"]
 
 
 @pytest.mark.parametrize("sync_on_run", ["true", "false"])
@@ -1749,11 +1754,6 @@ def test_generate_ctrace_run_defaults_synchronization_without_dwt_to_16m(
                 {"name": "ITM_TCR", "value": 5, "mask": 5},
             ],
             "stream": 1,
-        },
-        {
-            "ref": "timesync/ITM",
-            "type": "global_ts",
-            "regs": [{"name": "ITM_TCR", "value": 0, "mask": 0xC00}],
         },
     ]
 
@@ -2400,7 +2400,7 @@ def test_generate_ctrace_run_allocates_comparators_per_processor() -> None:
     )
     refs = output["ctrace-run"]["ctrace-refs"]
 
-    dwt_refs = [ref for ref in refs if ref["type"] == "dwt"]
+    dwt_refs = [ref for ref in refs if ref["ref"].endswith("/data#0")]
     assert [ref["regs"][0]["name"] for ref in dwt_refs] == [
         "DWT_COMP0",
         "DWT_COMP0",
@@ -2456,7 +2456,7 @@ def test_dwtv1_reserves_match_pair_per_processor() -> None:
     )
     refs = output["ctrace-run"]["ctrace-refs"]
 
-    dwt_refs = [ref for ref in refs if ref["type"] == "dwt"]
+    dwt_refs = [ref for ref in refs if ref["ref"].endswith("/data#0")]
     assert [ref["regs"][0]["name"] for ref in dwt_refs] == [
         "DWT_COMP0",
         "DWT_COMP0",

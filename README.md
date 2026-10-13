@@ -114,12 +114,21 @@ are treated as not configured. A `null` setup element with no required children
 is treated as an empty mapping and uses the documented defaults; this applies to
 `timestamps`, `timesync`, `exceptions`, `pcsampling`, `synchronization`, and
 `instructions`. Within configured objects, optional `null` properties are
-treated as omitted. In particular, `synchronization.DWT` defaults to `16M`.
+treated as omitted.
+
+Every registered feature uses its encoder default when absent. Missing data,
+event, and trace-halt lists contain no entries. Optional features such as local
+timestamps, exception trace, ITM channels, and PC sampling default to disabled;
+their initial disable writes are generated in `ctrace-disable`, so no additional
+feature reference is needed. A present empty node still enables presence flags
+such as `timestamps` and `exceptions`.
+
+`synchronization.DWT` defaults to `16M`.
 `synchronization` groups trace features; `synchronization.DWT` is the DWT
 synchronization feature. Its generated reference is `synchronization/DWT`, or
-`<pname>/synchronization/DWT` for a setup with `pname`. The default applies when
-the group is configured and `DWT` is absent or null; a null or empty group also
-uses the default. An absent group does not generate synchronization settings.
+`<pname>/synchronization/DWT` for a setup with `pname`. The default applies in
+every active setup when `DWT` is absent or null, including an absent, null, or
+empty group. Feature defaults are independent of whether their group is present.
 The modes are the strings `16M`, `64M`, `256M`, and `off` to disable
 synchronization. String `0` is also accepted as a synonym for `off`.
 Integers parsed from YAML are converted to decimal strings before comparison,
@@ -128,12 +137,15 @@ booleans and floating-point values are invalid.
 YAML boolean resolution follows YAML 1.2 Core: unquoted `off`, `on`, `yes`, and
 `no` remain strings; `true` and `false` (including title-case and uppercase)
 remain booleans. Both quoted and unquoted `off` disable DWT synchronization
-by clearing `ITM_TCR.SYNCENA`.
+and, like `0`, emit no register writes or reference. The initial `ctrace-disable`
+writes already clear `ITM_TCR.SYNCENA`.
 `timesync` groups trace features; `timesync.ITM` is the feature that controls
 ITM global timestamps. It defaults to `off` for every active setup when the
 group is absent, null, or an empty mapping, or when `ITM` is absent or null.
 Its generated reference is
 `timesync/ITM`, or `<pname>/timesync/ITM` for a setup with `pname`.
+The `off` mode emits no register writes or reference, because `ctrace-disable`
+already clears the ITM global timestamp configuration.
 Default register writes do not add missing nodes to the preserved source setup.
 The presence-only `disable` node retains its meaning when empty.
 Additional properties in `ctrace` configurations are preserved but ignored,
