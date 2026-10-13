@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -39,9 +40,7 @@ def resolve_locations(
     errors: dict[EntryPath, str] = {}
     pnames = pnames_by_path or {}
     for ref in entries:
-        result, error = _resolve_location_ref(
-            catalog, ref, pnames.get(ref.path)
-        )
+        result, error = _resolve_location_ref(catalog, ref, pnames.get(ref.path))
         if result is not None:
             resolved[ref.path] = result
         if error is not None:
@@ -280,3 +279,16 @@ def resolved_location(
         size=symbol.size,
         type=symbol.type,
     )
+
+
+def symbol_file_reference(symbol_file: Path, directory: Path) -> str:
+    """Return an ELF path relative to the output directory when possible."""
+
+    resolved_file = symbol_file.resolve(strict=False)
+    try:
+        return os.path.relpath(
+            resolved_file,
+            start=directory.resolve(strict=False),
+        )
+    except ValueError:
+        return str(resolved_file)

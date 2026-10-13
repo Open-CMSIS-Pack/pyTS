@@ -44,7 +44,11 @@ def setup_trace(
     project = load_trace_project(Path(cbuild_run_path))
     source = required_mapping(read_yaml(project.ctrace_path), "ctrace file")
     with SymbolCatalog(project.symbol_files) as catalog:
-        transformed = transform_trace_document(source, catalog)
+        transformed = transform_trace_document(
+            source,
+            catalog,
+            symbol_file_directory=project.output_path.parent,
+        )
 
     if (
         transformed.missing
