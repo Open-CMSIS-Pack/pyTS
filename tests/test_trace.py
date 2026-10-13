@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import os
 import warnings
 from dataclasses import replace
 from pathlib import Path
@@ -43,6 +44,7 @@ from pyts.coresight.v2 import DwtV2CoreSight
 from pyts.elf import MemberInfo, SymbolInfo
 from pyts.trace import setup_trace
 from pyts.trace import transform_trace_document
+from pyts.trace.locations import symbol_file_reference
 from pyts._version import package_version
 from pyts.symbols import SymbolCatalog
 from pyts.yaml_io import HexInt, read_yaml, write_yaml
@@ -394,7 +396,10 @@ def test_setup_trace_enriches_spec_location_entries(
     }
     project, cbuild_run, trace_name = _write_trace_project(tmp_path, ctrace=ctrace)
     expected_elf = cbuild_run.parent / "Blinky/NUCLEO-L552ZE-Q/DebugSWO/Blinky.axf"
-    expected_symbol_file = str(expected_elf.resolve(strict=False))
+    expected_symbol_file = os.path.relpath(
+        expected_elf.resolve(strict=False),
+        start=(project / ".trace").resolve(strict=False),
+    )
     calls: list[tuple[list[str], str | None]] = []
 
     def fake_resolve_symbols(
@@ -502,9 +507,41 @@ def test_setup_trace_enriches_null_metadata_without_rewriting_original_setup(
     ref = output["ctrace-run"]["ctrace-refs"][0]
     assert "error" not in ref
     assert ref["address"] == 0x08000100
-    assert ref["symbol-file"].endswith("/Blinky.axf")
+    assert ref["symbol-file"] == os.path.relpath(
+        cbuild_run.parent / "Blinky/NUCLEO-L552ZE-Q/DebugSWO/Blinky.axf",
+        start=(project / ".trace").resolve(strict=False),
+    )
     assert ref["size"] == 64
     assert ref["data-type"] == "unsigned"
+
+
+def test_setup_trace_preserves_user_symbol_file_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ctrace = {
+        "ctrace": {
+            "setup": [
+                {"data": [{"location": "main", "symbol-file": "provided.axf"}]}
+            ]
+        }
+    }
+    project, cbuild_run, trace_name = _write_trace_project(
+        tmp_path,
+        ctrace=ctrace,
+        processors=[{"core": "CM4"}],
+    )
+    _patch_trace_resolver(
+        monkeypatch,
+        resolve_symbols=lambda *_args: [_main_symbol()],
+    )
+
+    with pytest.warns(UserWarning, match="inconsistent 'symbol-file'"):
+        setup_trace(cbuild_run)
+
+    output = read_yaml(project / ".trace" / f"{trace_name}.ctrace-run.yml")
+    assert output["ctrace-run"]["ctrace-setup"] == ctrace["ctrace"]["setup"]
+    assert output["ctrace-run"]["ctrace-refs"][0]["symbol-file"] == "provided.axf"
 
 
 def test_setup_trace_limits_elf_lookup_to_setup_processor(
@@ -669,7 +706,10 @@ def test_setup_trace_generates_coresight_register_settings(
     assert refs_by_name["data#0"]["type"] == "dwt"
     assert refs_by_name["data#0"]["index"] == 0
     assert refs_by_name["data#0"]["address"] == 0x08000100
-    assert refs_by_name["data#0"]["symbol-file"].endswith("/Blinky.axf")
+    assert refs_by_name["data#0"]["symbol-file"] == os.path.relpath(
+        cbuild_run.parent / "Blinky/NUCLEO-L552ZE-Q/DebugSWO/Blinky.axf",
+        start=output_path.parent,
+    )
     assert refs_by_name["data#0"]["size"] == 64
     assert refs_by_name["data#0"]["data-type"] == "unsigned"
     assert refs_by_name["data#0"]["info"] == (
@@ -3189,7 +3229,10 @@ def test_setup_trace_enriches_numeric_location_from_address(
                     "data": [
                         {
                             "location": 0x08000100,
-                            "symbol-file": str(expected_elf.resolve(strict=False)),
+                            "symbol-file": os.path.relpath(
+                                expected_elf.resolve(strict=False),
+                                start=output_path.parent,
+                            ),
                             "symbol": "main",
                             "address": 0x08000100,
                             "symbol-size": 64,
@@ -3203,6 +3246,10 @@ def test_setup_trace_enriches_numeric_location_from_address(
     output_text = output_path.read_text(encoding="utf-8")
     assert "location: 0x08000100" in output_text
     assert "address: 0x08000100" in output_text
+    cbuild_data = read_yaml(cbuild_run)
+    assert cbuild_data["cbuild-run"]["output"][0]["file"] == (
+        "Blinky/NUCLEO-L552ZE-Q/DebugSWO/Blinky.axf"
+    )
 
 
 @pytest.mark.parametrize("location", ["0x20001000", 0x20001000])
@@ -4114,6 +4161,22 @@ def test_trace_transformation_does_not_mutate_source_document() -> None:
     assert result.document is not source
     output = cast(dict[str, Any], result.document)
     assert output["ctrace"]["data"][0]["address"] == "0x8000100"
+
+
+def test_symbol_file_reference_keeps_absolute_path_when_relpath_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    symbol_file = tmp_path / "out" / "Blinky.axf"
+
+    def raise_value_error(*_args: object, **_kwargs: object) -> str:
+        raise ValueError("paths are on different drives")
+
+    monkeypatch.setattr("pyts.trace.locations.os.path.relpath", raise_value_error)
+
+    assert symbol_file_reference(symbol_file, tmp_path / ".trace") == str(
+        symbol_file.resolve(strict=False)
+    )
 
 
 def test_setup_trace_requires_elf_outputs(tmp_path: Path) -> None:

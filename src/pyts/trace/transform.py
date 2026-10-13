@@ -20,6 +20,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from copy import deepcopy
+from dataclasses import replace
+from pathlib import Path
 from typing import cast
 
 from pyts.domain import (
@@ -39,7 +41,7 @@ from pyts.trace.enrichment import (
     manual_size,
     resolved_address_symbol,
 )
-from pyts.trace.locations import resolve_locations
+from pyts.trace.locations import resolve_locations, symbol_file_reference
 from pyts.trace.model import LocationSpec, TraceTransformResult
 
 
@@ -100,6 +102,8 @@ def enclosing_setup_pname(
 def transform_trace_document(
     source: YamlMapping,
     catalog: SymbolCatalog,
+    *,
+    symbol_file_directory: Path | None = None,
 ) -> TraceTransformResult:
     """Resolve and enrich a copied trace document without filesystem writes."""
 
@@ -118,6 +122,16 @@ def transform_trace_document(
         location_refs,
         pnames_by_path,
     )
+    if symbol_file_directory is not None:
+        resolved_locations = {
+            path: replace(
+                location,
+                symbol_file=symbol_file_reference(
+                    Path(location.symbol_file), symbol_file_directory
+                ),
+            )
+            for path, location in resolved_locations.items()
+        }
     enrich_location_refs(location_refs, resolved_locations, location_errors)
 
     missing_by_path = _location_missing_names(location_refs, location_errors)
