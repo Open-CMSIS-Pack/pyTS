@@ -100,13 +100,14 @@ _ITM_TRACE_BUS_ID_MAX = 0x7F
 
 @dataclass(frozen=True)
 class FeatureSpec:
-    """Static dispatch metadata for one CMSIS trace feature."""
+    """Static dispatch metadata for one complete CMSIS trace feature path."""
 
     ref_type: str
     repeated: bool = False
     streamed: bool = False
     null_as_empty_mapping: bool = False
     sequence: bool = False
+    generate_when_absent: bool = False
 
 
 @dataclass(frozen=True)
@@ -121,7 +122,7 @@ class _GeneratedRef:
 
 _FEATURE_SPECS = {
     "timestamps": FeatureSpec("dwt", null_as_empty_mapping=True),
-    "timesync": FeatureSpec("global_ts", null_as_empty_mapping=True),
+    "timesync.ITM": FeatureSpec("global_ts", generate_when_absent=True),
     "data": FeatureSpec("dwt", repeated=True, sequence=True),
     "exceptions": FeatureSpec("exception", null_as_empty_mapping=True),
     "events": FeatureSpec("event", repeated=True, sequence=True),
@@ -393,6 +394,25 @@ def _generated_setup_refs(
     ]
 
 
+def _resolve_feature_value(
+    setup: YamlMapping, feature: str,
+) -> tuple[bool, JsonValue, ValueError | None]:
+    """Resolve a feature path, distinguishing absent values and invalid groups."""
+
+    parts = feature.split(".")
+    value: JsonValue = setup
+    for index, part in enumerate(parts):
+        if value is None:
+            return False, None, None
+        if not isinstance(value, dict):
+            group = ".".join(parts[:index])
+            return True, None, ValueError(f"{group} must be a mapping")
+        if part not in value:
+            return False, None, None
+        value = value[part]
+    return True, value, None
+
+
 def _setup_refs(
     setup: YamlMapping,
     prefix: str | None,
@@ -404,13 +424,15 @@ def _setup_refs(
 
     refs: list[tuple[YamlMapping, bool]] = []
     for feature, spec in _FEATURE_SPECS.items():
-        if feature not in setup and feature != "timesync":
+        present, value, resolution_error = _resolve_feature_value(setup, feature)
+        if not present and not spec.generate_when_absent:
             continue
-        value = setup.get(feature)
-        if value is None:
-            if not spec.null_as_empty_mapping:
+        if value is None and resolution_error is None:
+            if spec.null_as_empty_mapping:
+                value = {}
+            elif not spec.generate_when_absent:
                 continue
-            value = {}
+        ref_name = feature.replace(".", "/")
         if (
             spec.sequence
             and isinstance(value, list)
@@ -424,7 +446,7 @@ def _setup_refs(
                 ref, streamed = _feature_ref(
                     feature,
                     entry,
-                    f"{feature}#{index}",
+                    f"{ref_name}#{index}",
                     processor,
                     ref_pname,
                     coresight,
@@ -434,10 +456,11 @@ def _setup_refs(
             ref, streamed = _feature_ref(
                 feature,
                 value,
-                feature,
+                ref_name,
                 processor,
                 ref_pname,
                 coresight,
+                resolution_error,
             )
             refs.append((_with_prefix(ref, prefix), streamed))
     return refs
@@ -459,6 +482,7 @@ def _feature_ref(
     processor: Processor,
     ref_pname: str | None,
     coresight: CoreSight | None,
+    resolution_error: ValueError | None = None,
 ) -> tuple[YamlMapping, bool]:
     """Build one feature reference, embedding generation failures as errors."""
 
@@ -468,7 +492,10 @@ def _feature_ref(
         ref["error"] = f"core {processor.core} has no architectural ITM/DWT trace support"
         return ref, False
 
-    regs, error = _feature_registers(feature, value, coresight)
+    regs: list[YamlMapping] = []
+    error = resolution_error
+    if error is None:
+        regs, error = _feature_registers(feature, value, coresight)
     if error is not None:
         ref["error"] = str(error)
         return ref, False
@@ -917,12 +944,10 @@ def _normalize_timesync_mode(value: JsonValue) -> JsonValue:
     return value
 
 
-def _timesync_regs(value: JsonValue) -> list[YamlMapping]:
+def _timesync_itm_regs(value: JsonValue) -> list[YamlMapping]:
     """Generate ITM global timestamp configuration writes."""
 
-    if not isinstance(value, dict):
-        raise ValueError("timesync must be a mapping")
-    mode = _normalize_timesync_mode(value.get("ITM"))
+    mode = _normalize_timesync_mode(value)
     if mode is None:
         mode = "off"
     encodings = {"off": 0, "128": 1, "8192": 2, "packet": 3}
@@ -1097,10 +1122,10 @@ def _timestamp_feature(value: JsonValue, _coresight: CoreSight) -> list[YamlMapp
     return _timestamp_regs(value)
 
 
-def _timesync_feature(value: JsonValue, _coresight: CoreSight) -> list[YamlMapping]:
-    """Adapt global timestamp generation to the common encoder signature."""
+def _timesync_itm_feature(value: JsonValue, _coresight: CoreSight) -> list[YamlMapping]:
+    """Adapt ITM global timestamp generation to the common encoder signature."""
 
-    return _timesync_regs(value)
+    return _timesync_itm_regs(value)
 
 
 def _exception_feature(_value: JsonValue, _coresight: CoreSight) -> list[YamlMapping]:
@@ -1142,7 +1167,7 @@ def _pc_sampling_feature(
 _FEATURE_ENCODERS: dict[str, FeatureEncoder] = {
     "itm": _itm_feature,
     "timestamps": _timestamp_feature,
-    "timesync": _timesync_feature,
+    "timesync.ITM": _timesync_itm_feature,
     "exceptions": _exception_feature,
     "events": _event_feature,
     "synchronization": _synchronization_feature,

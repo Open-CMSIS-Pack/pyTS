@@ -51,7 +51,7 @@ ctrace:
             "error": "instructions trace register generation is not supported",
         },
         {
-            "ref": "timesync",
+            "ref": "timesync/ITM",
             "type": "global_ts",
             "regs": [{"name": "ITM_TCR", "value": 0, "mask": 0xC00}],
         },
