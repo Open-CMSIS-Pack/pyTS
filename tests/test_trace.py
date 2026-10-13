@@ -1618,6 +1618,61 @@ def test_generate_ctrace_run_disables_dwt_synchronization_with_zero() -> None:
     ]
 
 
+@pytest.mark.parametrize("mode", ["off", "'off'"])
+def test_generate_ctrace_run_disables_dwt_synchronization_with_yaml_off(
+    tmp_path: Path, mode: str
+) -> None:
+    """Follow the synchronization modes in the CMSIS trace specification.
+
+    https://github.com/Open-CMSIS-Pack/cmsis-toolbox/blob/main/docs/Experimental-Features.md#synchronization
+    """
+
+    path = tmp_path / "trace.yml"
+    path.write_text(
+        f"ctrace:\n  setup:\n    - synchronization:\n        DWT: {mode}\n",
+        encoding="utf-8",
+    )
+    document = read_yaml(path)
+    output = cast(
+        dict[str, Any],
+        generate_ctrace_run(document, [Processor.from_core("CM4", None)]),
+    )
+    run = output["ctrace-run"]
+
+    assert run["ctrace-setup"] == document["ctrace"]["setup"]
+    assert run["ctrace-setup"][0]["synchronization"]["DWT"] == "off"
+    assert run["ctrace-refs"][0] == {
+        "ref": "synchronization",
+        "type": "dwt",
+        "regs": [{"name": "ITM_TCR", "value": 0, "mask": 1 << 2}],
+    }
+    assert all("stream" not in ref for ref in run["ctrace-refs"])
+
+
+@pytest.mark.parametrize("sync_on_run", ["true", "false"])
+def test_generate_ctrace_run_preserves_yaml_sync_on_run_boolean(
+    tmp_path: Path, sync_on_run: str
+) -> None:
+    path = tmp_path / "trace.yml"
+    path.write_text(
+        "ctrace:\n  setup:\n    - synchronization:\n"
+        f"        DWT: 16M\n        sync-on-run: {sync_on_run}\n",
+        encoding="utf-8",
+    )
+    output = cast(
+        dict[str, Any],
+        generate_ctrace_run(read_yaml(path), [Processor.from_core("CM4", None)]),
+    )
+    run = output["ctrace-run"]
+    assert run["ctrace-setup"][0]["synchronization"]["sync-on-run"] is (
+        sync_on_run == "true"
+    )
+    assert run["ctrace-refs"][0]["regs"] == [
+        {"name": "DWT_CTRL", "value": 1 << 10, "mask": 0xC00},
+        {"name": "ITM_TCR", "value": 5, "mask": 5},
+    ]
+
+
 @pytest.mark.parametrize(
     "synchronization",
     [
@@ -1693,9 +1748,16 @@ def test_generate_ctrace_run_ignores_and_preserves_additional_properties() -> No
         {"DWT": 1},
         {"DWT": 0.0},
         {"DWT": False},
+        {"DWT": True},
+        {"DWT": []},
+        {"DWT": {}},
         {"DWT": "0"},
         {"DWT": "16m"},
         {"DWT": "32M"},
+        {"DWT": "OFF"},
+        {"DWT": "on"},
+        {"DWT": "yes"},
+        {"DWT": "no"},
     ],
 )
 def test_generate_ctrace_run_rejects_invalid_dwt_synchronization_literals(
@@ -1710,7 +1772,7 @@ def test_generate_ctrace_run_rejects_invalid_dwt_synchronization_literals(
     )
 
     ref = output["ctrace-run"]["ctrace-refs"][0]
-    assert "error" in ref
+    assert ref["error"] == f"unsupported synchronization.DWT: {entry['DWT']}"
     assert "regs" not in ref
 
 

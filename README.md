@@ -110,6 +110,8 @@ is treated as an empty mapping and uses the documented defaults; this applies to
 `timestamps`, `timesync`, `exceptions`, `pcsampling`, `synchronization`, and
 `instructions`. Within configured objects, optional `null` properties are
 treated as omitted. In particular, `synchronization.DWT` defaults to `16M`.
+It accepts `off`, `16M`, `64M`, or `256M`; `off` clears `ITM_TCR.SYNCENA`.
+Numeric `0` remains accepted to disable synchronization for compatibility.
 An absent `timesync` is also treated as an empty mapping for every active setup:
 its optional `ITM` child defaults to `off`. Default register writes do not add
 the missing node to the preserved source setup.

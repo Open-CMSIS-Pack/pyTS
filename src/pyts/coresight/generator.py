@@ -944,24 +944,26 @@ def _event_regs(value: JsonValue) -> list[YamlMapping]:
 
 
 def _synchronization_regs(value: JsonValue) -> list[YamlMapping]:
-    """Generate synchronization configuration writes (currently supports optional DWT)."""
+    """Generate DWT synchronization period and ITM enable writes."""
 
     if not isinstance(value, dict):
         raise ValueError("synchronization must be a mapping")
     dwt = value.get("DWT")
     if dwt is None:
         dwt = "16M"
-    if isinstance(dwt, bool):
+    # Numeric zero is retained as a legacy spelling of "off".
+    encodings: dict[str | int, int] = {"off": 0, 0: 0, "16M": 1, "64M": 2, "256M": 3}
+    if (
+        not isinstance(dwt, (str, int))
+        or isinstance(dwt, bool)
+        or dwt not in encodings
+    ):
         raise ValueError(f"unsupported synchronization.DWT: {dwt}")
-    if isinstance(dwt, int):
-        if dwt == 0:
-            return [_reg("ITM_TCR", 0, 1 << 2)]
-        raise ValueError(f"unsupported synchronization.DWT: {dwt}")
-    encodings = {"16M": 1, "64M": 2, "256M": 3}
-    if not isinstance(dwt, str) or dwt not in encodings:
-        raise ValueError(f"unsupported synchronization.DWT: {dwt}")
+    synctap = encodings[dwt]
+    if synctap == 0:
+        return [_reg("ITM_TCR", 0, 1 << 2)]
     return [
-        _reg("DWT_CTRL", encodings[dwt] << 10, 0xC00),
+        _reg("DWT_CTRL", synctap << 10, 0xC00),
         _reg("ITM_TCR", (1 << 2) | 1, (1 << 2) | 1),
     ]
 
