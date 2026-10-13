@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 from pyts.yaml_io import HexInt, read_yaml, write_yaml
@@ -97,3 +98,34 @@ def test_pyts_dumper_does_not_modify_global_safe_dumper(tmp_path: Path) -> None:
 
     assert path.read_text(encoding="utf-8") == "exceptions:\n"
     assert yaml.safe_dump({"exceptions": None}) == "exceptions: null\n"
+
+
+@pytest.mark.parametrize("word", ["off", "on", "yes", "no", "Off", "ON", "Yes", "NO"])
+def test_read_yaml_preserves_yaml_12_boolean_like_strings(
+    tmp_path: Path, word: str
+) -> None:
+    path = tmp_path / "source.yml"
+    path.write_text(f"{word}: {word}\n", encoding="utf-8")
+
+    assert read_yaml(path) == {word: word}
+    assert yaml.safe_load(path.read_text(encoding="utf-8")) == {
+        word.lower() in {"on", "yes"}: word.lower() in {"on", "yes"}
+    }
+    write_yaml(path, read_yaml(path))
+    assert read_yaml(path) == {word: word}
+
+
+@pytest.mark.parametrize(
+    ("scalar", "expected"),
+    [
+        ("true", True), ("True", True), ("TRUE", True),
+        ("false", False), ("False", False), ("FALSE", False),
+    ],
+)
+def test_read_yaml_keeps_yaml_12_booleans(
+    tmp_path: Path, scalar: str, expected: bool
+) -> None:
+    path = tmp_path / "source.yml"
+    path.write_text(f"enabled: {scalar}\nquoted: '{scalar}'\n", encoding="utf-8")
+
+    assert read_yaml(path) == {"enabled": expected, "quoted": scalar}

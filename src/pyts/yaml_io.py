@@ -19,7 +19,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, TextIO
+import re
+from typing import Any, TextIO, cast
 
 import yaml
 
@@ -29,7 +30,7 @@ class HexInt(int):
 
 
 class _PyTSSafeLoader(yaml.SafeLoader):
-    """Safe YAML loader that retains hexadecimal integer scalar intent."""
+    """Safe YAML loader with YAML 1.2 booleans and hexadecimal scalar intent."""
 
 
 class _PyTSSafeDumper(yaml.SafeDumper):
@@ -76,6 +77,22 @@ def _represent_list(dumper: yaml.SafeDumper, value: list[Any]) -> yaml.Node:
     return node
 
 
+_PyTSSafeLoader.yaml_implicit_resolvers = {
+    key: [
+        (tag, pattern)
+        for tag, pattern in resolvers
+        if tag != "tag:yaml.org,2002:bool"
+    ]
+    for key, resolvers in cast(
+        dict[str | None, list[tuple[str, re.Pattern[str]]]],
+        yaml.SafeLoader.yaml_implicit_resolvers,
+    ).items()
+}
+_PyTSSafeLoader.add_implicit_resolver(  # pyright: ignore[reportUnknownMemberType]
+    "tag:yaml.org,2002:bool",
+    re.compile(r"^(?:true|True|TRUE|false|False|FALSE)$"),
+    list("tTfF"),
+)
 _PyTSSafeLoader.add_constructor("tag:yaml.org,2002:int", _construct_int)
 _PyTSSafeDumper.add_representer(HexInt, _represent_hex_int)
 _PyTSSafeDumper.add_representer(type(None), _represent_none)
@@ -88,6 +105,9 @@ def read_yaml(path: str | Path) -> Any:
     ``path`` may be a string or ``Path``. The file is opened as UTF-8 text and
     parsed with the isolated safe loader, so arbitrary Python objects are not
     constructed. Hexadecimal integers retain their output formatting marker.
+    Implicit booleans follow the YAML 1.2 Core schema: ``off``, ``on``, ``yes``,
+    and ``no`` remain strings; ``true`` and ``false`` (also title-case and
+    uppercase) become booleans. Other scalar resolution is unchanged.
     Empty documents return ``None``, matching PyYAML behavior.
     """
 

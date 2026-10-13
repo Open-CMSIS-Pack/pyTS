@@ -402,9 +402,9 @@ def _setup_refs(
 
     refs: list[tuple[YamlMapping, bool]] = []
     for feature, spec in _FEATURE_SPECS.items():
-        if feature not in setup:
+        if feature not in setup and feature != "timesync":
             continue
-        value = setup[feature]
+        value = setup.get(feature)
         if value is None:
             if not spec.null_as_empty_mapping:
                 continue
@@ -907,6 +907,26 @@ def _timestamp_regs(value: JsonValue) -> list[YamlMapping]:
     return [_reg("ITM_TCR", tcr, 0x303)]
 
 
+def _timesync_regs(value: JsonValue) -> list[YamlMapping]:
+    """Generate ITM global timestamp configuration writes."""
+
+    if not isinstance(value, dict):
+        raise ValueError("timesync must be a mapping")
+    mode = value.get("ITM")
+    if mode is None:
+        mode = "off"
+    encodings: dict[str | int, int] = {"off": 0, 128: 1, 8192: 2, "packet": 3}
+    if (
+        not isinstance(mode, (str, int))
+        or isinstance(mode, bool)
+        or mode not in encodings
+    ):
+        raise ValueError("timesync.ITM must be off, 128, 8192, or packet")
+    encoding = encodings[mode]
+    enabled = 1 if encoding else 0
+    return [_reg("ITM_TCR", (encoding << 10) | enabled, 0xC00 | enabled)]
+
+
 def _event_regs(value: JsonValue) -> list[YamlMapping]:
     """Generate DWT event-counter trace configuration writes."""
 
@@ -1056,6 +1076,12 @@ def _timestamp_feature(value: JsonValue, _coresight: CoreSight) -> list[YamlMapp
     return _timestamp_regs(value)
 
 
+def _timesync_feature(value: JsonValue, _coresight: CoreSight) -> list[YamlMapping]:
+    """Adapt global timestamp generation to the common encoder signature."""
+
+    return _timesync_regs(value)
+
+
 def _exception_feature(_value: JsonValue, _coresight: CoreSight) -> list[YamlMapping]:
     """Generate exception-trace feature writes."""
 
@@ -1095,6 +1121,7 @@ def _pc_sampling_feature(
 _FEATURE_ENCODERS: dict[str, FeatureEncoder] = {
     "itm": _itm_feature,
     "timestamps": _timestamp_feature,
+    "timesync": _timesync_feature,
     "exceptions": _exception_feature,
     "events": _event_feature,
     "synchronization": _synchronization_feature,

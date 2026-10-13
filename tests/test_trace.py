@@ -706,7 +706,12 @@ def test_setup_trace_generates_coresight_register_settings(
         {"name": "DWT_CTRL", "value": 1 << 10, "mask": 0xC00},
         {"name": "ITM_TCR", "value": 5, "mask": 5},
     ]
-    assert all(ref["stream"] == 1 for ref in refs)
+    assert refs_by_name["timesync"] == {
+        "ref": "timesync",
+        "type": "global_ts",
+        "regs": [{"name": "ITM_TCR", "value": 0, "mask": 0xC00}],
+    }
+    assert all(ref["stream"] == 1 for ref in refs if ref["ref"] != "timesync")
     output_text = output_path.read_text(encoding="utf-8")
     assert "ctrace-disable:\n" in output_text
     assert "mask: 0x007f1ffe" in output_text
@@ -805,8 +810,20 @@ def test_setup_trace_scopes_refs_and_reports_unsupported_core(
             "stream": 1,
         },
         {
+            "ref": "application/timesync",
+            "type": "global_ts",
+            "pname": "application",
+            "regs": [{"name": "ITM_TCR", "value": 0, "mask": 0xC00}],
+        },
+        {
             "ref": "network/exceptions",
             "type": "exception",
+            "pname": "network",
+            "error": "core CM0PLUS has no architectural ITM/DWT trace support",
+        },
+        {
+            "ref": "network/timesync",
+            "type": "global_ts",
             "pname": "network",
             "error": "core CM0PLUS has no architectural ITM/DWT trace support",
         },
@@ -838,7 +855,13 @@ def test_generate_ctrace_run_assigns_smallest_free_atbids_per_processor() -> Non
     )
 
     assert [setup["itm"]["atbid"] for setup in run["ctrace-setup"]] == [2, 1]
-    assert [ref["stream"] for ref in run["ctrace-refs"]] == [1, 1, 2]
+    assert [(ref["ref"], ref.get("stream")) for ref in run["ctrace-refs"]] == [
+        ("CM4/data#0", 1),
+        ("CM4/itm", 1),
+        ("CM4/timesync", None),
+        ("CM7/itm", 2),
+        ("CM7/timesync", None),
+    ]
 
 
 def test_generate_ctrace_run_sorts_refs_naturally_by_name() -> None:
@@ -857,6 +880,7 @@ def test_generate_ctrace_run_sorts_refs_naturally_by_name() -> None:
         *(f"data#{index}" for index in range(11)),
         "exceptions",
         "timestamps",
+        "timesync",
     ]
 
 
@@ -875,7 +899,13 @@ def test_generate_ctrace_run_skips_null_container_feature(feature: str) -> None:
         [Processor.from_core("CM4", "CM4")],
     )
 
-    assert run["ctrace-refs"] == []
+    assert run["ctrace-refs"] == [
+        {
+            "ref": "CM4/timesync",
+            "type": "global_ts",
+            "regs": [{"name": "ITM_TCR", "value": 0, "mask": 0xC00}],
+        }
+    ]
     assert run["ctrace-setup"][0][feature] is None
 
 
@@ -890,7 +920,13 @@ def test_generate_ctrace_run_skips_empty_sequence_feature(
         [Processor.from_core("CM4", None)],
     )
 
-    assert run["ctrace-refs"] == []
+    assert run["ctrace-refs"] == [
+        {
+            "ref": "timesync",
+            "type": "global_ts",
+            "regs": [{"name": "ITM_TCR", "value": 0, "mask": 0xC00}],
+        }
+    ]
 
 
 @pytest.mark.parametrize(
@@ -921,9 +957,11 @@ def test_generate_ctrace_run_preserves_null_presence_flags() -> None:
 
     refs = {ref["ref"]: ref for ref in run["ctrace-refs"]}
     assert {"timestamps", "timesync", "exceptions"} <= refs.keys()
-    assert refs["timesync"]["error"] == (
-        "timesync trace register generation is not supported"
-    )
+    assert refs["timesync"] == {
+        "ref": "timesync",
+        "type": "global_ts",
+        "regs": [{"name": "ITM_TCR", "value": 0, "mask": 0xC00}],
+    }
 
 
 @pytest.mark.parametrize(
@@ -1044,7 +1082,12 @@ def test_generate_ctrace_run_reuses_atbid_for_multiple_setups_of_processor() -> 
     )
 
     assert [setup["itm"]["atbid"] for setup in run["ctrace-setup"]] == [1, 1]
-    assert [ref["stream"] for ref in run["ctrace-refs"]] == [1, 1]
+    assert [(ref["ref"], ref.get("stream")) for ref in run["ctrace-refs"]] == [
+        ("CM4/exceptions", 1),
+        ("CM4/itm", 1),
+        ("CM4/timesync", None),
+        ("CM4/timesync", None),
+    ]
 
 
 def test_generate_ctrace_run_adds_atbid_without_explicit_itm_configuration() -> None:
@@ -1064,7 +1107,8 @@ def test_generate_ctrace_run_propagates_implicit_atbid_to_data_itm_tcr() -> None
     )
 
     assert run["ctrace-setup"][0]["itm"] == {"atbid": 1}
-    assert run["ctrace-refs"][-1] == {
+    refs = {ref["ref"]: ref for ref in run["ctrace-refs"]}
+    assert refs["CM4/itm"] == {
         "ref": "CM4/itm",
         "type": "itm",
         "regs": [
@@ -1610,7 +1654,12 @@ def test_generate_ctrace_run_defaults_synchronization_without_dwt_to_16m(
                 {"name": "ITM_TCR", "value": 5, "mask": 5},
             ],
             "stream": 1,
-        }
+        },
+        {
+            "ref": "timesync",
+            "type": "global_ts",
+            "regs": [{"name": "ITM_TCR", "value": 0, "mask": 0xC00}],
+        },
     ]
 
 
@@ -1676,10 +1725,11 @@ def _generate_data_refs(
             [processor],
         ),
     )
-    return output, cast(
+    refs = cast(
         list[dict[str, Any]],
         output["ctrace-run"]["ctrace-refs"],
     )
+    return output, [ref for ref in refs if ref["ref"].startswith("data#")]
 
 
 def test_generate_ctrace_run_defaults_null_optional_data_properties() -> None:

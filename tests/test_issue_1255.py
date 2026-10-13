@@ -49,5 +49,10 @@ ctrace:
             "ref": "instructions",
             "type": "dwt",
             "error": "instructions trace register generation is not supported",
-        }
+        },
+        {
+            "ref": "timesync",
+            "type": "global_ts",
+            "regs": [{"name": "ITM_TCR", "value": 0, "mask": 0xC00}],
+        },
     ]
