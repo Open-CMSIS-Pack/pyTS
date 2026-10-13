@@ -108,6 +108,7 @@ class FeatureSpec:
     null_as_empty_mapping: bool = False
     sequence: bool = False
     generate_when_absent: bool = False
+    generate_when_group_present: bool = False
 
 
 @dataclass(frozen=True)
@@ -128,7 +129,7 @@ _FEATURE_SPECS = {
     "events": FeatureSpec("event", repeated=True, sequence=True),
     "itm": FeatureSpec("itm"),
     "pcsampling": FeatureSpec("pcsample", null_as_empty_mapping=True),
-    "synchronization": FeatureSpec("dwt", null_as_empty_mapping=True),
+    "synchronization.DWT": FeatureSpec("dwt", generate_when_group_present=True),
     "instructions": FeatureSpec("dwt", null_as_empty_mapping=True),
     "tracehalt": FeatureSpec("dwt", sequence=True),
 }
@@ -187,8 +188,8 @@ def generate_ctrace_run(
     ``ctrace`` supplies the enriched data used to generate references.  When
     provided, ``original`` supplies the setup written to
     ``ctrace-run.ctrace-setup``. Output setups are copied, with address fields
-    marked for hexadecimal serialization and integer ``timesync.ITM`` values
-    normalized to strings.
+    marked for hexadecimal serialization and integer ``timesync.ITM`` and
+    ``synchronization.DWT`` values normalized to strings.
     """
 
     root = ctrace.get("ctrace")
@@ -425,12 +426,17 @@ def _setup_refs(
     refs: list[tuple[YamlMapping, bool]] = []
     for feature, spec in _FEATURE_SPECS.items():
         present, value, resolution_error = _resolve_feature_value(setup, feature)
-        if not present and not spec.generate_when_absent:
+        generate_default = spec.generate_when_absent
+        if spec.generate_when_group_present:
+            group = feature.rpartition(".")[0]
+            group_present, _, _ = _resolve_feature_value(setup, group)
+            generate_default = generate_default or group_present
+        if not present and not generate_default:
             continue
         if value is None and resolution_error is None:
             if spec.null_as_empty_mapping:
                 value = {}
-            elif not spec.generate_when_absent:
+            elif not generate_default:
                 continue
         ref_name = feature.replace(".", "/")
         if (
@@ -974,27 +980,28 @@ def _event_regs(value: JsonValue) -> list[YamlMapping]:
     return _dwt_ctrl_regs(ctrl)
 
 
-def _synchronization_regs(value: JsonValue) -> list[YamlMapping]:
-    """Generate DWT synchronization period and ITM enable writes."""
+def _normalize_synchronization_mode(value: JsonValue) -> JsonValue:
+    """Convert parsed integer DWT modes to strings, preserving other types."""
 
-    if not isinstance(value, dict):
-        raise ValueError("synchronization must be a mapping")
-    dwt = value.get("DWT")
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    return value
+
+
+def _synchronization_dwt_regs(value: JsonValue) -> list[YamlMapping]:
+    """Generate DWT synchronization configuration writes from a scalar mode."""
+
+    dwt = _normalize_synchronization_mode(value)
     if dwt is None:
         dwt = "16M"
-    # Numeric zero is retained as a legacy spelling of "off".
-    encodings: dict[str | int, int] = {"off": 0, 0: 0, "16M": 1, "64M": 2, "256M": 3}
-    if (
-        not isinstance(dwt, (str, int))
-        or isinstance(dwt, bool)
-        or dwt not in encodings
-    ):
+    encodings = {"off": 0, "0": 0, "16M": 1, "64M": 2, "256M": 3}
+    if not isinstance(dwt, str) or dwt not in encodings:
         raise ValueError(f"unsupported synchronization.DWT: {dwt}")
-    synctap = encodings[dwt]
-    if synctap == 0:
+    encoding = encodings[dwt]
+    if encoding == 0:
         return [_reg("ITM_TCR", 0, 1 << 2)]
     return [
-        _reg("DWT_CTRL", synctap << 10, 0xC00),
+        _reg("DWT_CTRL", encoding << 10, 0xC00),
         _reg("ITM_TCR", (1 << 2) | 1, (1 << 2) | 1),
     ]
 
@@ -1048,7 +1055,7 @@ def _reg(name: str, value: int, mask: int | None = None) -> YamlMapping:
 
 
 def _serialize_setups(setups: list[JsonValue]) -> list[JsonValue]:
-    """Copy output setups and normalize their address and ITM mode scalars."""
+    """Copy output setups and normalize address, ITM, and DWT mode scalars."""
 
     result = [_hexify_addresses(setup) for setup in setups]
     for setup in result:
@@ -1057,6 +1064,11 @@ def _serialize_setups(setups: list[JsonValue]) -> list[JsonValue]:
         timesync = setup.get("timesync")
         if isinstance(timesync, dict) and "ITM" in timesync:
             timesync["ITM"] = _normalize_timesync_mode(timesync["ITM"])
+        synchronization = setup.get("synchronization")
+        if isinstance(synchronization, dict) and "DWT" in synchronization:
+            synchronization["DWT"] = _normalize_synchronization_mode(
+                synchronization["DWT"]
+            )
     return result
 
 
@@ -1140,13 +1152,13 @@ def _event_feature(value: JsonValue, _coresight: CoreSight) -> list[YamlMapping]
     return _event_regs(value)
 
 
-def _synchronization_feature(
+def _synchronization_dwt_feature(
     value: JsonValue,
     _coresight: CoreSight,
 ) -> list[YamlMapping]:
-    """Adapt synchronization generation to the feature encoder signature."""
+    """Adapt DWT synchronization generation to the feature encoder signature."""
 
-    return _synchronization_regs(value)
+    return _synchronization_dwt_regs(value)
 
 
 def _data_feature(value: JsonValue, coresight: CoreSight) -> list[YamlMapping]:
@@ -1170,7 +1182,7 @@ _FEATURE_ENCODERS: dict[str, FeatureEncoder] = {
     "timesync.ITM": _timesync_itm_feature,
     "exceptions": _exception_feature,
     "events": _event_feature,
-    "synchronization": _synchronization_feature,
+    "synchronization.DWT": _synchronization_dwt_feature,
     "data": _data_feature,
     "pcsampling": _pc_sampling_feature,
 }

@@ -135,6 +135,33 @@ def test_default_feature_is_generated_when_its_path_is_absent(
     ]
 
 
+@pytest.mark.parametrize(
+    ("setup", "has_default"),
+    [
+        ("{}", False), ("group:", False), ("group: {}", False),
+        ("group:\n        nested:", True),
+        ("group:\n        nested: {}", True),
+        ("group:\n        nested:\n          second:", True),
+    ],
+)
+def test_group_default_requires_the_immediate_group_to_be_configured(
+    tmp_path: Path,
+    grouped_features: dict[str, generator.FeatureSpec],
+    setup: str,
+    has_default: bool,
+) -> None:
+    grouped_features["group.nested.second"] = generator.FeatureSpec(
+        "second", generate_when_group_present=True,
+    )
+    expected = [
+        {
+            "ref": "group/nested/second", "type": "second",
+            "regs": [{"name": "SECOND", "value": 0}],
+        },
+    ] if has_default else []
+    assert _generate(tmp_path, setup)["ctrace-refs"] == expected
+
+
 @pytest.mark.usefixtures("grouped_features")
 @pytest.mark.parametrize("container", ["false", "128", "packet", "[]"])
 def test_invalid_group_reports_errors_on_its_feature_paths(

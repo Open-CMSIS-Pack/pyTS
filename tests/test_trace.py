@@ -742,7 +742,7 @@ def test_setup_trace_generates_coresight_register_settings(
         {"name": "ITM_TCR", "value": 0x10001, "mask": 0x7F0001},
     ]
     assert refs_by_name["itm"]["index"] == [0, 1, 2, 3]
-    assert refs_by_name["synchronization"]["regs"] == [
+    assert refs_by_name["synchronization/DWT"]["regs"] == [
         {"name": "DWT_CTRL", "value": 1 << 10, "mask": 0xC00},
         {"name": "ITM_TCR", "value": 5, "mask": 5},
     ]
@@ -1064,7 +1064,7 @@ def test_generate_ctrace_run_defaults_null_optional_feature_properties() -> None
     assert refs["pcsampling"]["regs"] == [
         {"name": "DWT_CTRL", "value": 0, "mask": 1 << 12}
     ]
-    assert refs["synchronization"]["regs"] == [
+    assert refs["synchronization/DWT"]["regs"] == [
         {"name": "DWT_CTRL", "value": 1 << 10, "mask": 0xC00},
         {"name": "ITM_TCR", "value": 5, "mask": 5},
     ]
@@ -1682,7 +1682,7 @@ def test_generate_ctrace_run_disables_dwt_synchronization_with_yaml_off(
     assert run["ctrace-setup"] == document["ctrace"]["setup"]
     assert run["ctrace-setup"][0]["synchronization"]["DWT"] == "off"
     assert run["ctrace-refs"][0] == {
-        "ref": "synchronization",
+        "ref": "synchronization/DWT",
         "type": "dwt",
         "regs": [{"name": "ITM_TCR", "value": 0, "mask": 1 << 2}],
     }
@@ -1742,7 +1742,7 @@ def test_generate_ctrace_run_defaults_synchronization_without_dwt_to_16m(
     )
     assert output["ctrace-run"]["ctrace-refs"] == [
         {
-            "ref": "synchronization",
+            "ref": "synchronization/DWT",
             "type": "dwt",
             "regs": [
                 {"name": "DWT_CTRL", "value": 1 << 10, "mask": 0xC00},
@@ -1776,7 +1776,7 @@ def test_generate_ctrace_run_ignores_and_preserves_additional_properties() -> No
     assert refs["CM4/pcsampling"]["regs"] == [
         {"name": "DWT_CTRL", "value": 0, "mask": 1 << 12}
     ]
-    assert refs["CM4/synchronization"]["regs"] == [
+    assert refs["CM4/synchronization/DWT"]["regs"] == [
         {"name": "DWT_CTRL", "value": 1 << 10, "mask": 0xC00},
         {"name": "ITM_TCR", "value": 5, "mask": 5},
     ]
@@ -1791,7 +1791,7 @@ def test_generate_ctrace_run_ignores_and_preserves_additional_properties() -> No
         {"DWT": True},
         {"DWT": []},
         {"DWT": {}},
-        {"DWT": "0"},
+        {"DWT": "00"},
         {"DWT": "16m"},
         {"DWT": "32M"},
         {"DWT": "OFF"},

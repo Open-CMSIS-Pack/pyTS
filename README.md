@@ -115,8 +115,20 @@ is treated as an empty mapping and uses the documented defaults; this applies to
 `timestamps`, `timesync`, `exceptions`, `pcsampling`, `synchronization`, and
 `instructions`. Within configured objects, optional `null` properties are
 treated as omitted. In particular, `synchronization.DWT` defaults to `16M`.
-It accepts `off`, `16M`, `64M`, or `256M`; `off` clears `ITM_TCR.SYNCENA`.
-Numeric `0` remains accepted to disable synchronization for compatibility.
+`synchronization` groups trace features; `synchronization.DWT` is the DWT
+synchronization feature. Its generated reference is `synchronization/DWT`, or
+`<pname>/synchronization/DWT` for a setup with `pname`. The default applies when
+the group is configured and `DWT` is absent or null; a null or empty group also
+uses the default. An absent group does not generate synchronization settings.
+The modes are the strings `16M`, `64M`, `256M`, and `off` to disable
+synchronization. String `0` is also accepted as a synonym for `off`.
+Integers parsed from YAML are converted to decimal strings before comparison,
+so integer `0` and string `"0"` are equivalent. Strings are compared exactly;
+booleans and floating-point values are invalid.
+YAML boolean resolution follows YAML 1.2 Core: unquoted `off`, `on`, `yes`, and
+`no` remain strings; `true` and `false` (including title-case and uppercase)
+remain booleans. Both quoted and unquoted `off` disable DWT synchronization
+by clearing `ITM_TCR.SYNCENA`.
 `timesync` groups trace features; `timesync.ITM` is the feature that controls
 ITM global timestamps. It defaults to `off` for every active setup when the
 group is absent, null, or an empty mapping, or when `ITM` is absent or null.
@@ -129,10 +141,10 @@ allowing future schema extensions without validation failures. Property names
 remain case-sensitive: an incorrectly cased optional property is ignored,
 while an incorrectly cased required property is reported as missing.
 The `ctrace-run.ctrace-setup` node retains the original source `ctrace.setup`
-content, with integer `timesync.ITM` values normalized to decimal strings in
-the output copy. Enriched location metadata is used internally when generating
-`ctrace-refs`. Symbol extents and types are emitted as `data[].symbol-size`
-and `data[].symbol-type` in the generated references; `data[].size` remains
+content, with integer `timesync.ITM` and `synchronization.DWT` values normalized
+to decimal strings in the output copy. Enriched location metadata is used
+internally when generating `ctrace-refs`. Symbol extents and types are emitted
+as `data[].symbol-size` and `data[].symbol-type` in the generated references; `data[].size` remains
 the trace access size. DWARF types use language-neutral categories derived from
 their tags and encodings, such as `signed`, `unsigned`, `bool`, `float`,
 `pointer`, `array`, and `struct`; source-language type names are not emitted.
