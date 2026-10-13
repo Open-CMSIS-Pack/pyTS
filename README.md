@@ -78,7 +78,7 @@ prefers it and writes `.trace/~<solution>+<target-type>[@<target-set>].ctrace-ru
 instead, leaving the production trace files unchanged.
 
 For symbol locations that pyTS resolves, generated `symbol-file:` entries are
-relative to the directory containing the generated trace output. The
+relative to the `ctrace-run.yml` file. The
 `.cbuild-run.yml` input remains unchanged, so its `output[].file` paths keep
 their CMSIS-Toolbox-defined base directory. This is intentionally different
 from the current CMSIS-Toolbox `ctrace-run` schema, which specifies an
