@@ -26,6 +26,7 @@ import pytest
 
 from pyts.cli import main
 from pyts.coresight import Processor, generate_ctrace_run
+from pyts.domain import YamlMapping
 from pyts.yaml_io import read_yaml
 
 
@@ -37,9 +38,18 @@ def _generate_run(
     path = tmp_path / "source.ctrace.yml"
     path.write_text(source, encoding="utf-8")
     document = read_yaml(path)
-    output = generate_ctrace_run(document, processors, deepcopy(document))
+    original = deepcopy(document)
+    output = generate_ctrace_run(document, processors, original)
     run = cast(dict[str, Any], output["ctrace-run"])
-    assert run["ctrace-setup"] == read_yaml(path)["ctrace"]["setup"]
+    assert original == read_yaml(path)
+    expected_setups = cast(list[YamlMapping], read_yaml(path)["ctrace"]["setup"])
+    for setup in expected_setups:
+        timesync = setup.get("timesync")
+        if isinstance(timesync, dict):
+            mode = timesync.get("ITM")
+            if isinstance(mode, int) and not isinstance(mode, bool):
+                timesync["ITM"] = str(mode)
+    assert run["ctrace-setup"] == expected_setups
     return run
 
 
@@ -50,7 +60,11 @@ def _generate_run(
         ("off", 0, 0xC00),
         ('"off"', 0, 0xC00),
         ("128", 0x401, 0xC01),
+        ('"128"', 0x401, 0xC01),
+        ("0x80", 0x401, 0xC01),
         ("8192", 0x801, 0xC01),
+        ('"8192"', 0x801, 0xC01),
+        ("0x2000", 0x801, 0xC01),
         ("packet", 0xC01, 0xC01),
     ],
 )
@@ -70,6 +84,9 @@ def test_issue_1269_encodes_itm_global_timestamp_modes(
     if value:
         expected["stream"] = 1
     assert run["ctrace-refs"] == [expected]
+    assert run["ctrace-setup"][0]["timesync"]["ITM"] == {
+        0: "off", 0x401: "128", 0x801: "8192", 0xC01: "packet",
+    }[value]
 
 
 @pytest.mark.parametrize(
@@ -103,8 +120,8 @@ def test_issue_1269_defaults_absent_and_empty_timesync_to_off(
 @pytest.mark.parametrize(
     "mode",
     [
-        "true", "false", "0", "256", "128.0", '"128"', '"8192"',
-        "OFF", "Packet", "[]", "{}",
+        "true", "false", "0", "256", "128.0", "8192.0",
+        '"0x80"', '"0128"', '"128 "', "OFF", "Packet", "[]", "{}",
     ],
 )
 def test_issue_1269_rejects_invalid_itm_modes(tmp_path: Path, mode: str) -> None:
@@ -223,7 +240,7 @@ def test_issue_1269_does_not_create_missing_setups(tmp_path: Path) -> None:
     assert run["ctrace-refs"] == []
 
 
-@pytest.mark.parametrize("mode", ["off", "8192"])
+@pytest.mark.parametrize("mode", ["off", "128", '"128"', "8192", '"8192"'])
 def test_issue_1269_cli_writes_timesync_registers(tmp_path: Path, mode: str) -> None:
     (tmp_path / ".cmsis").mkdir()
     cbuild = tmp_path / "Blinky+Target.cbuild-run.yml"
@@ -249,7 +266,66 @@ cbuild-run:
     output_path = tmp_path / ".trace" / "Blinky+Target.ctrace-run.yml"
     output = read_yaml(output_path)
     assert output["ctrace-run"]["ctrace-setup"][0]["timesync"]["ITM"] == (
-        "off" if mode == "off" else 8192
+        mode.strip('"')
     )
     assert "error" not in output["ctrace-run"]["ctrace-refs"][0]
     assert "mask: 0x00000c" in output_path.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("use_original", [False, True])
+def test_issue_1269_normalizes_output_without_changing_inputs(
+    tmp_path: Path, use_original: bool
+) -> None:
+    path = tmp_path / "source.ctrace.yml"
+    path.write_text(
+        """\
+ctrace:
+  setup:
+    - timesync:
+        ITM: 128
+      itm:
+        atbid: 1
+""",
+        encoding="utf-8",
+    )
+    document = read_yaml(path)
+    original = deepcopy(document) if use_original else None
+    if original is not None:
+        original["ctrace"]["setup"][0]["timesync"]["ITM"] = 8192
+    before_document = deepcopy(document)
+    before_original = deepcopy(original)
+
+    output = generate_ctrace_run(
+        document, [Processor.from_core("CM4", None)], original,
+    )
+    run = cast(dict[str, Any], output["ctrace-run"])
+    assert run["ctrace-setup"][0]["timesync"]["ITM"] == (
+        "8192" if use_original else "128"
+    )
+    assert document == before_document
+    assert original == before_original
+
+
+def test_issue_1269_normalizes_disabled_setups_and_preserves_non_mappings(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "source.ctrace.yml"
+    path.write_text(
+        """\
+ctrace:
+  setup:
+    -
+    - disable:
+      timesync:
+        ITM: 0x80
+""",
+        encoding="utf-8",
+    )
+    document = read_yaml(path)
+    output = generate_ctrace_run(document, [Processor.from_core("CM4", None)])
+    run = cast(dict[str, Any], output["ctrace-run"])
+    assert run["ctrace-setup"] == [
+        None, {"disable": None, "timesync": {"ITM": "128"}},
+    ]
+    assert document == read_yaml(path)
+    assert run["ctrace-refs"] == []

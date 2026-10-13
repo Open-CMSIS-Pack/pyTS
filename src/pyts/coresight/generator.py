@@ -184,8 +184,10 @@ def generate_ctrace_run(
     """Generate a ctrace-run document and CoreSight settings.
 
     ``ctrace`` supplies the enriched data used to generate references.  When
-    provided, ``original`` supplies the unmodified setup written to
-    ``ctrace-run.ctrace-setup``.
+    provided, ``original`` supplies the setup written to
+    ``ctrace-run.ctrace-setup``. Output setups are copied, with address fields
+    marked for hexadecimal serialization and integer ``timesync.ITM`` values
+    normalized to strings.
     """
 
     root = ctrace.get("ctrace")
@@ -213,7 +215,7 @@ def generate_ctrace_run(
     return {
         "ctrace-run": {
             "generated-by": generated_by,
-            "ctrace-setup": _hexify_addresses(output_setups),
+            "ctrace-setup": _serialize_setups(output_setups),
             "ctrace-disable": cast(
                 JsonValue,
                 _generate_ctrace_disable(processors),
@@ -907,20 +909,24 @@ def _timestamp_regs(value: JsonValue) -> list[YamlMapping]:
     return [_reg("ITM_TCR", tcr, 0x303)]
 
 
+def _normalize_timesync_mode(value: JsonValue) -> JsonValue:
+    """Convert parsed integer ITM modes to strings, preserving other types."""
+
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    return value
+
+
 def _timesync_regs(value: JsonValue) -> list[YamlMapping]:
     """Generate ITM global timestamp configuration writes."""
 
     if not isinstance(value, dict):
         raise ValueError("timesync must be a mapping")
-    mode = value.get("ITM")
+    mode = _normalize_timesync_mode(value.get("ITM"))
     if mode is None:
         mode = "off"
-    encodings: dict[str | int, int] = {"off": 0, 128: 1, 8192: 2, "packet": 3}
-    if (
-        not isinstance(mode, (str, int))
-        or isinstance(mode, bool)
-        or mode not in encodings
-    ):
+    encodings = {"off": 0, "128": 1, "8192": 2, "packet": 3}
+    if not isinstance(mode, str) or mode not in encodings:
         raise ValueError("timesync.ITM must be off, 128, 8192, or packet")
     encoding = encodings[mode]
     enabled = 1 if encoding else 0
@@ -1014,6 +1020,19 @@ def _reg(name: str, value: int, mask: int | None = None) -> YamlMapping:
     """Serialize one register write as a YAML mapping."""
 
     return RegisterWrite(name, value, mask).to_yaml()
+
+
+def _serialize_setups(setups: list[JsonValue]) -> list[JsonValue]:
+    """Copy output setups and normalize their address and ITM mode scalars."""
+
+    result = [_hexify_addresses(setup) for setup in setups]
+    for setup in result:
+        if not isinstance(setup, dict):
+            continue
+        timesync = setup.get("timesync")
+        if isinstance(timesync, dict) and "ITM" in timesync:
+            timesync["ITM"] = _normalize_timesync_mode(timesync["ITM"])
+    return result
 
 
 def _hexify_addresses(value: JsonValue) -> JsonValue:
