@@ -100,13 +100,14 @@ _ITM_TRACE_BUS_ID_MAX = 0x7F
 
 @dataclass(frozen=True)
 class FeatureSpec:
-    """Static dispatch metadata for one CMSIS trace feature."""
+    """Static dispatch metadata for one complete CMSIS trace feature path."""
 
     ref_type: str
     repeated: bool = False
     streamed: bool = False
     null_as_empty_mapping: bool = False
     sequence: bool = False
+    generate_when_absent: bool = False
 
 
 @dataclass(frozen=True)
@@ -121,7 +122,7 @@ class _GeneratedRef:
 
 _FEATURE_SPECS = {
     "timestamps": FeatureSpec("dwt", null_as_empty_mapping=True),
-    "timesync": FeatureSpec("global_ts", null_as_empty_mapping=True),
+    "timesync.ITM": FeatureSpec("global_ts", generate_when_absent=True),
     "data": FeatureSpec("dwt", repeated=True, sequence=True),
     "exceptions": FeatureSpec("exception", null_as_empty_mapping=True),
     "events": FeatureSpec("event", repeated=True, sequence=True),
@@ -184,8 +185,10 @@ def generate_ctrace_run(
     """Generate a ctrace-run document and CoreSight settings.
 
     ``ctrace`` supplies the enriched data used to generate references.  When
-    provided, ``original`` supplies the unmodified setup written to
-    ``ctrace-run.ctrace-setup``.
+    provided, ``original`` supplies the setup written to
+    ``ctrace-run.ctrace-setup``. Output setups are copied, with address fields
+    marked for hexadecimal serialization and integer ``timesync.ITM`` values
+    normalized to strings.
     """
 
     root = ctrace.get("ctrace")
@@ -213,7 +216,7 @@ def generate_ctrace_run(
     return {
         "ctrace-run": {
             "generated-by": generated_by,
-            "ctrace-setup": _hexify_addresses(output_setups),
+            "ctrace-setup": _serialize_setups(output_setups),
             "ctrace-disable": cast(
                 JsonValue,
                 _generate_ctrace_disable(processors),
@@ -391,6 +394,25 @@ def _generated_setup_refs(
     ]
 
 
+def _resolve_feature_value(
+    setup: YamlMapping, feature: str,
+) -> tuple[bool, JsonValue, ValueError | None]:
+    """Resolve a feature path, distinguishing absent values and invalid groups."""
+
+    parts = feature.split(".")
+    value: JsonValue = setup
+    for index, part in enumerate(parts):
+        if value is None:
+            return False, None, None
+        if not isinstance(value, dict):
+            group = ".".join(parts[:index])
+            return True, None, ValueError(f"{group} must be a mapping")
+        if part not in value:
+            return False, None, None
+        value = value[part]
+    return True, value, None
+
+
 def _setup_refs(
     setup: YamlMapping,
     prefix: str | None,
@@ -402,13 +424,15 @@ def _setup_refs(
 
     refs: list[tuple[YamlMapping, bool]] = []
     for feature, spec in _FEATURE_SPECS.items():
-        if feature not in setup:
+        present, value, resolution_error = _resolve_feature_value(setup, feature)
+        if not present and not spec.generate_when_absent:
             continue
-        value = setup[feature]
-        if value is None:
-            if not spec.null_as_empty_mapping:
+        if value is None and resolution_error is None:
+            if spec.null_as_empty_mapping:
+                value = {}
+            elif not spec.generate_when_absent:
                 continue
-            value = {}
+        ref_name = feature.replace(".", "/")
         if (
             spec.sequence
             and isinstance(value, list)
@@ -422,7 +446,7 @@ def _setup_refs(
                 ref, streamed = _feature_ref(
                     feature,
                     entry,
-                    f"{feature}#{index}",
+                    f"{ref_name}#{index}",
                     processor,
                     ref_pname,
                     coresight,
@@ -432,10 +456,11 @@ def _setup_refs(
             ref, streamed = _feature_ref(
                 feature,
                 value,
-                feature,
+                ref_name,
                 processor,
                 ref_pname,
                 coresight,
+                resolution_error,
             )
             refs.append((_with_prefix(ref, prefix), streamed))
     return refs
@@ -457,6 +482,7 @@ def _feature_ref(
     processor: Processor,
     ref_pname: str | None,
     coresight: CoreSight | None,
+    resolution_error: ValueError | None = None,
 ) -> tuple[YamlMapping, bool]:
     """Build one feature reference, embedding generation failures as errors."""
 
@@ -466,7 +492,10 @@ def _feature_ref(
         ref["error"] = f"core {processor.core} has no architectural ITM/DWT trace support"
         return ref, False
 
-    regs, error = _feature_registers(feature, value, coresight)
+    regs: list[YamlMapping] = []
+    error = resolution_error
+    if error is None:
+        regs, error = _feature_registers(feature, value, coresight)
     if error is not None:
         ref["error"] = str(error)
         return ref, False
@@ -907,6 +936,28 @@ def _timestamp_regs(value: JsonValue) -> list[YamlMapping]:
     return [_reg("ITM_TCR", tcr, 0x303)]
 
 
+def _normalize_timesync_mode(value: JsonValue) -> JsonValue:
+    """Convert parsed integer ITM modes to strings, preserving other types."""
+
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    return value
+
+
+def _timesync_itm_regs(value: JsonValue) -> list[YamlMapping]:
+    """Generate ITM global timestamp configuration writes."""
+
+    mode = _normalize_timesync_mode(value)
+    if mode is None:
+        mode = "off"
+    encodings = {"off": 0, "128": 1, "8192": 2, "packet": 3}
+    if not isinstance(mode, str) or mode not in encodings:
+        raise ValueError("timesync.ITM must be off, 128, 8192, or packet")
+    encoding = encodings[mode]
+    enabled = 1 if encoding else 0
+    return [_reg("ITM_TCR", (encoding << 10) | enabled, 0xC00 | enabled)]
+
+
 def _event_regs(value: JsonValue) -> list[YamlMapping]:
     """Generate DWT event-counter trace configuration writes."""
 
@@ -924,24 +975,26 @@ def _event_regs(value: JsonValue) -> list[YamlMapping]:
 
 
 def _synchronization_regs(value: JsonValue) -> list[YamlMapping]:
-    """Generate synchronization configuration writes (currently supports optional DWT)."""
+    """Generate DWT synchronization period and ITM enable writes."""
 
     if not isinstance(value, dict):
         raise ValueError("synchronization must be a mapping")
     dwt = value.get("DWT")
     if dwt is None:
         dwt = "16M"
-    if isinstance(dwt, bool):
+    # Numeric zero is retained as a legacy spelling of "off".
+    encodings: dict[str | int, int] = {"off": 0, 0: 0, "16M": 1, "64M": 2, "256M": 3}
+    if (
+        not isinstance(dwt, (str, int))
+        or isinstance(dwt, bool)
+        or dwt not in encodings
+    ):
         raise ValueError(f"unsupported synchronization.DWT: {dwt}")
-    if isinstance(dwt, int):
-        if dwt == 0:
-            return [_reg("ITM_TCR", 0, 1 << 2)]
-        raise ValueError(f"unsupported synchronization.DWT: {dwt}")
-    encodings = {"16M": 1, "64M": 2, "256M": 3}
-    if not isinstance(dwt, str) or dwt not in encodings:
-        raise ValueError(f"unsupported synchronization.DWT: {dwt}")
+    synctap = encodings[dwt]
+    if synctap == 0:
+        return [_reg("ITM_TCR", 0, 1 << 2)]
     return [
-        _reg("DWT_CTRL", encodings[dwt] << 10, 0xC00),
+        _reg("DWT_CTRL", synctap << 10, 0xC00),
         _reg("ITM_TCR", (1 << 2) | 1, (1 << 2) | 1),
     ]
 
@@ -992,6 +1045,19 @@ def _reg(name: str, value: int, mask: int | None = None) -> YamlMapping:
     """Serialize one register write as a YAML mapping."""
 
     return RegisterWrite(name, value, mask).to_yaml()
+
+
+def _serialize_setups(setups: list[JsonValue]) -> list[JsonValue]:
+    """Copy output setups and normalize their address and ITM mode scalars."""
+
+    result = [_hexify_addresses(setup) for setup in setups]
+    for setup in result:
+        if not isinstance(setup, dict):
+            continue
+        timesync = setup.get("timesync")
+        if isinstance(timesync, dict) and "ITM" in timesync:
+            timesync["ITM"] = _normalize_timesync_mode(timesync["ITM"])
+    return result
 
 
 def _hexify_addresses(value: JsonValue) -> JsonValue:
@@ -1056,6 +1122,12 @@ def _timestamp_feature(value: JsonValue, _coresight: CoreSight) -> list[YamlMapp
     return _timestamp_regs(value)
 
 
+def _timesync_itm_feature(value: JsonValue, _coresight: CoreSight) -> list[YamlMapping]:
+    """Adapt ITM global timestamp generation to the common encoder signature."""
+
+    return _timesync_itm_regs(value)
+
+
 def _exception_feature(_value: JsonValue, _coresight: CoreSight) -> list[YamlMapping]:
     """Generate exception-trace feature writes."""
 
@@ -1095,6 +1167,7 @@ def _pc_sampling_feature(
 _FEATURE_ENCODERS: dict[str, FeatureEncoder] = {
     "itm": _itm_feature,
     "timestamps": _timestamp_feature,
+    "timesync.ITM": _timesync_itm_feature,
     "exceptions": _exception_feature,
     "events": _event_feature,
     "synchronization": _synchronization_feature,

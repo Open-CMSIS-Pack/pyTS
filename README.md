@@ -89,9 +89,9 @@ comparators before active references are applied. Their content is independent
 of the selected trace features, allowing a debugger to turn off settings that
 were removed while an interactive session was running. Active reference `regs`
 lists contain masked architectural ITM and DWT register writes for ITM channels,
-timestamps, basic DWTv1/DWTv2 data trace, exception trace, event trace, PC
-sampling, and DWT synchronization. Unsupported processor or feature combinations
-are reported on the corresponding reference with `error`.
+local and global timestamps, basic DWTv1/DWTv2 data trace, exception trace, event
+trace, PC sampling, and DWT synchronization. Unsupported processor or feature
+combinations are reported on the corresponding reference with `error`.
 
 DWT capabilities are derived from the processor core because `cbuild-run` does
 not provide comparator counts. Trace slots can be allocated for data trace;
@@ -115,13 +115,22 @@ is treated as an empty mapping and uses the documented defaults; this applies to
 `timestamps`, `timesync`, `exceptions`, `pcsampling`, `synchronization`, and
 `instructions`. Within configured objects, optional `null` properties are
 treated as omitted. In particular, `synchronization.DWT` defaults to `16M`.
+It accepts `off`, `16M`, `64M`, or `256M`; `off` clears `ITM_TCR.SYNCENA`.
+Numeric `0` remains accepted to disable synchronization for compatibility.
+`timesync` groups trace features; `timesync.ITM` is the feature that controls
+ITM global timestamps. It defaults to `off` for every active setup when the
+group is absent, null, or an empty mapping, or when `ITM` is absent or null.
+Its generated reference is
+`timesync/ITM`, or `<pname>/timesync/ITM` for a setup with `pname`.
+Default register writes do not add missing nodes to the preserved source setup.
 The presence-only `disable` node retains its meaning when empty.
 Additional properties in `ctrace` configurations are preserved but ignored,
 allowing future schema extensions without validation failures. Property names
 remain case-sensitive: an incorrectly cased optional property is ignored,
 while an incorrectly cased required property is reported as missing.
 The `ctrace-run.ctrace-setup` node retains the original source `ctrace.setup`
-content. Enriched location metadata is used internally when generating
+content, with integer `timesync.ITM` values normalized to decimal strings in
+the output copy. Enriched location metadata is used internally when generating
 `ctrace-refs`. Symbol extents and types are emitted as `data[].symbol-size`
 and `data[].symbol-type` in the generated references; `data[].size` remains
 the trace access size. DWARF types use language-neutral categories derived from
@@ -138,6 +147,33 @@ document; pyTS resolves both styles in document order using the same ELF cache.
 PC sampling periods use integer CPU-cycle counts: `0` disables sampling, while
 supported enabled periods are `64 * n` or `1024 * n`, where `n` is an integer
 from `1` through `16`.
+
+`timesync.ITM` controls global timestamp insertion in ITM streams for correlation
+across processors. It accepts the strings `off` (default), `128`, `8192`, or
+`packet`. Integers parsed from YAML are converted to decimal strings before
+comparison, so quoted and unquoted numeric modes are equivalent. Strings are
+compared exactly; booleans and floating-point values are invalid. These modes
+map to `ITM_TCR[11:10]` values `0`, `1`, `2`, and `3` respectively.
+Enabled modes also set `ITMENA` and participate in stream/ATBID allocation;
+`off` clears only the global timestamp mode bits. For example:
+
+```yaml
+ctrace:
+  setup:
+    - pname: CM4
+      timesync:
+        ITM: 8192
+```
+
+Enabled modes require a timestamp generator on the device, configured through
+the trace communication settings in `*.csolution.yml` and optionally
+`*.dbgconf`; pyTS configures timestamp insertion, not that generator.
+
+pyTS reads YAML with YAML 1.2 Core implicit boolean resolution. Unquoted `off`,
+`on`, `yes`, and `no` remain strings in keys and values. Only `true`, `false`,
+and their title-case or uppercase forms become booleans. Other scalar parsing
+is unchanged, including hexadecimal integers. Boolean properties should use
+`true` or `false`.
 
 Data trace supports the CMSIS output modes `value`, `offset`, `PC`, `match`,
 `PC+value`, `offset+value`, and `PC+offset`. DWTv1 supports `value`,
