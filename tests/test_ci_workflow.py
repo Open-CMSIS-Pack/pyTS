@@ -15,12 +15,18 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
 import yaml
+
+pytestmark = pytest.mark.skipif(
+    shutil.which("bash") is None,
+    reason="Bash is required for CI workflow integration tests",
+)
 
 
 @pytest.mark.parametrize(
