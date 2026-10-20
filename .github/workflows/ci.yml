@@ -49,7 +49,14 @@ jobs:
           cache-dependency-path: pyproject.toml
 
       - name: Install dependencies
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
+          if [[ "$GITHUB_EVENT_NAME" == "release" ]]; then
+            export SETUPTOOLS_SCM_PRETEND_VERSION="${RELEASE_TAG#v}"
+            echo "SETUPTOOLS_SCM_PRETEND_VERSION=$SETUPTOOLS_SCM_PRETEND_VERSION" >> "$GITHUB_ENV"
+          fi
           python -m pip install --upgrade pip
           python -m pip install '.[installer]'
 
@@ -161,6 +168,26 @@ jobs:
           pattern: pyTS-*
           skip-decompress: true
           merge-multiple: true
+
+      - name: Validate release archive versions
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          expected_version="${RELEASE_TAG#v}"
+          shopt -s nullglob
+          archives=(release-assets/*)
+          if (( ${#archives[@]} == 0 )); then
+            echo "::error::No release archives found."
+            exit 1
+          fi
+          for archive in "${archives[@]}"; do
+            filename="${archive##*/}"
+            if [[ ! -f "$archive" || ! "$filename" =~ ^"pyTS-${expected_version}-"[^-]+-[^-]+\.(tar\.gz|zip)$ ]]; then
+              echo "::error::Unexpected release archive '$filename'; expected version '$expected_version'."
+              exit 1
+            fi
+          done
 
       - name: Upload executables to GitHub release
         env:
