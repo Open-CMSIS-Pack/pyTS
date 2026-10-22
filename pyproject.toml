@@ -94,3 +94,4 @@ files = ["src", "tests"]
 strict = true
 warn_unreachable = true
 pretty = true
+
