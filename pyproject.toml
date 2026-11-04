@@ -1,6 +1,6 @@
 [build-system]
 requires = [
-  "hatchling>=1.32.4",
+  "hatchling>=1.33.0",
   "hatch-vcs>=0.5.0",
 ]
 build-backend = "hatchling.build"
@@ -33,21 +33,21 @@ dependencies = [
 
 [project.optional-dependencies]
 test = [
-  "pytest>=9.1.1",
+  "pytest>=9.2.0",
 ]
 typecheck = [
-  "mypy>=2.4.0",
+  "mypy>=2.4.1",
   "pyright>=1.1.414",
-  "pytest>=9.1.1",
-  "types-PyYAML>=6.0.12.20260906",
+  "pytest>=9.2.0",
+  "types-PyYAML>=6.0.12.20261030",
 ]
 lint = [
   "diff-cover>=10.6.0",
-  "mypy>=2.4.0",
+  "mypy>=2.4.1",
   "pyright>=1.1.414",
-  "pytest>=9.1.1",
+  "pytest>=9.2.0",
   "pytest-cov>=7.1.0",
-  "types-PyYAML>=6.0.12.20260906",
+  "types-PyYAML>=6.0.12.20261030",
 ]
 license = [
   "pip-licenses>=5.5.5",
