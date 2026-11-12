@@ -103,7 +103,7 @@ Core | Trace slots | Additional match slots
 Cortex-M0 | 0 | 0
 Cortex-M0+, Cortex-M23 | 0 | 2
 Cortex-M3, Cortex-M4, Cortex-M7, Cortex-M33 | 4 | 0
-SecurCore SC300, Cortex-M35P, STAR-MC1, STAR-MC3 | 4 | 0
+SecurCore SC300, Cortex-M35P, Cortex-M42, STAR-MC1, STAR-MC3 | 4 | 0
 Cortex-M52, Cortex-M55, Cortex-M85 | 4 | 4
 Other or unknown cores | 0 | 0
 

@@ -1260,6 +1260,7 @@ def test_generate_ctrace_run_encodes_atbid_in_itm_trace_bus_id() -> None:
         ("CM3", "Cortex-M3", DwtVersion.V1),
         ("CM33", "Cortex-M33", DwtVersion.V2),
         ("CM35P", "Cortex-M35P", DwtVersion.V2),
+        ("CM42", "Cortex-M42", DwtVersion.V2),
         ("CM52", "Cortex-M52", DwtVersion.V2),
         ("CM55", "Cortex-M55", DwtVersion.V2),
         ("CM85", "Cortex-M85", DwtVersion.V2),
@@ -1295,6 +1296,8 @@ def test_core_metadata_uses_normalized_device_literals(
         ("Cortex-M35P", DwtVersion.V2, 4, 0),
         ("STAR-MC1", DwtVersion.V2, 4, 0),
         ("STAR-MC3", DwtVersion.V2, 4, 0),
+        ("CM42", DwtVersion.V2, 4, 0),
+        ("Cortex-M42", DwtVersion.V2, 4, 0),
         ("CM52", DwtVersion.V2, 4, 4),
         ("CM55", DwtVersion.V2, 4, 4),
         ("CM85", DwtVersion.V2, 4, 4),
@@ -1480,6 +1483,9 @@ def test_generate_ctrace_run_writes_valueless_empty_disable(tmp_path: Path) -> N
         ("STAR-MC3", "MC3"),
         ("star-mc3", "MC3"),
         ("MC3", "MC3"),
+        ("Cortex-M42", "CM42"),
+        ("cortex-m42", "CM42"),
+        ("CM42", "CM42"),
         ("Cortex-M0+", "CM0+"),
         ("Cortex-M0plus", "CM0+"),
         ("cOrTeX-M0pLuS", "CM0+"),
@@ -1980,9 +1986,9 @@ def test_generate_ctrace_run_copies_data_metadata_for_unsupported_core() -> None
 
 @pytest.mark.parametrize(
     ("core", "display"),
-    [("star-mc1", "STAR-MC1"), ("STAR-MC3", "STAR-MC3")],
+    [("star-mc1", "STAR-MC1"), ("STAR-MC3", "STAR-MC3"), ("Cortex-M42", "Cortex-M42")],
 )
-def test_star_cores_support_dwtv2_data_trace(
+def test_star_and_compatible_cores_support_dwtv2_data_trace(
     core: str,
     display: str,
 ) -> None:
