@@ -39,7 +39,7 @@ typecheck = [
   "mypy>=2.4.1",
   "pyright>=1.1.414",
   "pytest>=9.2.0",
-  "types-PyYAML>=6.0.12.20261030",
+  "types-PyYAML>=6.0.12.20261103",
 ]
 lint = [
   "diff-cover>=10.6.0",
@@ -47,7 +47,7 @@ lint = [
   "pyright>=1.1.414",
   "pytest>=9.2.0",
   "pytest-cov>=7.1.0",
-  "types-PyYAML>=6.0.12.20261030",
+  "types-PyYAML>=6.0.12.20261103",
 ]
 license = [
   "pip-licenses>=5.5.5",
