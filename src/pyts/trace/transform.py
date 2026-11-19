@@ -213,16 +213,26 @@ def _process_legacy_refs(
     for pname, refs in groups.items():
         scoped_symbols = [ref for ref in refs if ref.path in symbol_paths]
         scoped_addresses = [ref for ref in refs if ref.path not in symbol_paths]
-        _process_legacy_scope(
-            catalog,
-            pname,
-            refs,
-            scoped_symbols,
-            scoped_addresses,
-            has_locations,
-            missing,
-            resolved_names,
-        )
+        if not catalog.candidates(pname=pname):
+            for ref in scoped_symbols:
+                ref.value["error"] = "Symbol resolution is unavailable because no ELF file is available."
+                missing[ref.path] = str(ref.value["symbol"])
+            continue
+        try:
+            _process_legacy_scope(
+                catalog,
+                pname,
+                refs,
+                scoped_symbols,
+                scoped_addresses,
+                has_locations,
+                missing,
+                resolved_names,
+            )
+        except FileNotFoundError as exc:
+            for ref in scoped_symbols:
+                ref.value["error"] = f"ELF file does not exist: {exc.filename}"
+                missing[ref.path] = str(ref.value["symbol"])
     return missing, resolved_names
 
 

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pyts._version import package_version
 from pyts.coresight import generate_ctrace_run, processors_from_cbuild
 from pyts.domain import YamlMapping
 from pyts.errors import MissingSymbolsError
@@ -37,26 +38,43 @@ def setup_trace(
 ) -> TraceSetupResult:
     """Generate a CMSIS trace run file from a cbuild-run file.
 
-    Legacy-only missing symbols fail before writing. Location-style and mixed
-    documents write annotated diagnostics before raising ``MissingSymbolsError``.
+    Missing inputs write a diagnostic run file. Unresolved symbols write their
+    diagnostics before raising ``MissingSymbolsError`` unless allowed.
     """
 
-    project = load_trace_project(Path(cbuild_run_path))
-    source = required_mapping(read_yaml(project.ctrace_path), "ctrace file")
+    build_path = Path(cbuild_run_path)
+    try:
+        project = load_trace_project(build_path)
+    except FileNotFoundError as exc:
+        # Without build metadata, place the diagnostic beside the requested input.
+        name = (
+            build_path.name.removesuffix(".yml")
+            .removesuffix(".yaml")
+            .removesuffix(".cbuild-run")
+        )
+        return _write_input_error(
+            build_path,
+            build_path.parent / ".cmsis" / f"{name}.ctrace.yml",
+            build_path.parent / ".trace" / f"{name}.ctrace-run.yml",
+            "",
+            exc,
+        )
+    try:
+        source = required_mapping(read_yaml(project.ctrace_path), "ctrace file")
+    except FileNotFoundError as exc:
+        return _write_input_error(
+            build_path,
+            project.ctrace_path,
+            project.output_path,
+            project.target,
+            exc,
+        )
     with SymbolCatalog(project.symbol_files) as catalog:
         transformed = transform_trace_document(
             source,
             catalog,
             symbol_file_directory=project.output_path.parent,
         )
-
-    if (
-        transformed.missing
-        and not allow_missing
-        and transformed.has_legacy_entries
-        and not transformed.has_locations
-    ):
-        raise MissingSymbolsError(transformed.missing)
 
     project.output_path.parent.mkdir(parents=True, exist_ok=True)
     processors = processors_from_cbuild(project.cbuild_run)
@@ -77,6 +95,38 @@ def setup_trace(
         symbols=transformed.symbols,
         missing=transformed.missing,
         diagnostics=_output_diagnostics(output),
+    )
+
+
+def _write_input_error(
+    build_path: Path,
+    trace_path: Path,
+    output_path: Path,
+    target: str,
+    error: FileNotFoundError,
+) -> TraceSetupResult:
+    """Replace stale output with a root diagnostic when an input is missing."""
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    write_yaml(output_path, {
+        "ctrace-run": {
+            "generated-by": f"pyTS v{package_version()}",
+            "ctrace-setup": [],
+            "ctrace-disable": None,
+            "ctrace-refs": [{
+                "ref": "ctrace",
+                "error": f"file not found: {error.filename}",
+            }],
+        },
+    })
+    return TraceSetupResult(
+        cbuild_run=str(build_path),
+        ctrace=str(trace_path),
+        output=str(output_path),
+        target=target,
+        symbols=[],
+        missing=[],
+        diagnostics=frozenset({"error"}),
     )
 
 

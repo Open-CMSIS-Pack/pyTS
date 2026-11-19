@@ -67,8 +67,18 @@ The command returns status `0` when generation succeeds without `error`
 entries. If the written trace run file contains an `error`, it returns `2`.
 Use `--pedantic` to also return `2` for `warning` entries; `info` entries do
 not affect the status. The file and result summary are still written when
-generation reports these diagnostics. `--allow-missing` permits writing the
-file with unresolved symbols, but any resulting `error` still returns `2`.
+generation reports these diagnostics. Unresolved symbols are written before
+reporting failure; `--allow-missing` also returns the result summary, but any
+resulting `error` still returns `2`.
+
+Builds without ELF outputs can still use numeric trace locations. Symbolic
+locations receive an error explaining that symbol resolution is unavailable.
+Missing ELF files are reported on the affected entries. Missing ctrace inputs
+produce a `ctrace-refs` entry with `ref: ctrace` and an `error` message, replacing
+any previous run output. If the cbuild-run input itself is missing, pyTS cannot
+derive the solution directory: it writes the diagnostic to
+`.trace/<input-name>.ctrace-run.yml` relative to the requested input's directory
+instead. Writing diagnostics requires a writable output directory.
 
 The command reads `.cmsis/<solution>+<target-type>[@<target-set>].ctrace.yml`, resolves
 symbols from the cbuild-run ELF outputs, and writes the generated trace setup to

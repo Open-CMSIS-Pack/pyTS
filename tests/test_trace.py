@@ -46,7 +46,7 @@ from pyts.trace import setup_trace
 from pyts.trace import transform_trace_document
 from pyts.trace.locations import symbol_file_reference
 from pyts._version import package_version
-from pyts.symbols import SymbolCatalog
+from pyts.symbols import SymbolCatalog, SymbolFile
 from pyts.yaml_io import HexInt, read_yaml, write_yaml
 
 
@@ -3997,7 +3997,7 @@ def test_setup_trace_supports_target_type_without_explicit_target_set(
         setup_trace(cbuild_run)
 
     assert trace_name == "Blinky+NUCLEO-L552ZE-Q"
-    assert not (project / ".trace" / f"{trace_name}.ctrace-run.yml").exists()
+    assert (project / ".trace" / f"{trace_name}.ctrace-run.yml").exists()
 
 
 def test_setup_trace_uses_first_elf_that_resolves_symbol(
@@ -4140,6 +4140,9 @@ def test_trace_transformation_does_not_mutate_source_document() -> None:
     original = json.loads(json.dumps(source))
 
     class FakeCatalog:
+        def candidates(self, *, pname: str | None = None) -> list[SymbolFile]:
+            return [SymbolFile(Path("test.axf"), frozenset(), None)]
+
         def resolve_names(
             self,
             names: list[str],
@@ -4185,16 +4188,17 @@ def test_symbol_file_reference_keeps_absolute_path_when_relpath_fails(
     )
 
 
-def test_setup_trace_requires_elf_outputs(tmp_path: Path) -> None:
+def test_setup_trace_reports_unavailable_elf_outputs(tmp_path: Path) -> None:
     project, cbuild_run, trace_name = _write_trace_project(
         tmp_path,
         outputs=[{"file": "Blinky.hex", "type": "hex"}],
     )
 
-    with pytest.raises(ValueError, match="at least one ELF file"):
+    with pytest.raises(ValueError, match="missing symbols: main"):
         setup_trace(cbuild_run)
 
-    assert not (project / ".trace" / f"{trace_name}.ctrace-run.yml").exists()
+    output = read_yaml(project / ".trace" / f"{trace_name}.ctrace-run.yml")
+    assert "no ELF file is available" in output["ctrace"]["data"][0]["error"]
 
 
 def test_trace_setup_cli_outputs_json_summary(
