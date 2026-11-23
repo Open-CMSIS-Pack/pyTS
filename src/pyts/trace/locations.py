@@ -162,7 +162,7 @@ def unresolved_qualifier_error(
             return f"no ELF files are available for processor '{pname}'"
         return f"location qualifier '{qualifier}' does not resolve to an ELF file for processor '{pname}'."
     if qualifier is None:
-        return "no ELF files are available for location lookup"
+        return "Symbol resolution is unavailable because no ELF file is available."
     normalized = normalize_alias(qualifier)
     if looks_like_file_qualifier(normalized):
         return f"ELF file qualifier '{qualifier}' does not resolve to an existing ELF file"

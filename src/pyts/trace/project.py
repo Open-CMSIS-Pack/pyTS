@@ -90,11 +90,11 @@ def symbol_files(
     cbuild_run: YamlMapping,
     root: Path,
 ) -> list[SymbolFile]:
-    """Discover ordered ELF outputs and their qualifier aliases."""
+    """Discover ELF outputs, allowing builds with no symbol sources."""
 
-    outputs = cbuild_run.get("output")
+    outputs = cbuild_run.get("output", [])
     if not isinstance(outputs, list):
-        raise ValueError("cbuild-run.output must list at least one ELF file")
+        raise ValueError("cbuild-run.output must be a list")
     projects = project_aliases_from_index(root)
     results: list[SymbolFile] = []
     for output in outputs:
@@ -115,8 +115,6 @@ def symbol_files(
                 pname=output_pname(output),
             )
         )
-    if not results:
-        raise ValueError("cbuild-run.output must list at least one ELF file")
     return results
 
 
