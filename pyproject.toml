@@ -27,7 +27,7 @@ classifiers = [
   "Topic :: Software Development :: Debuggers",
 ]
 dependencies = [
-  "PyYAML>=6.0.3",
+  "PyYAML>=6.0.4",
   "pyelftools>=0.33",
 ]
 
